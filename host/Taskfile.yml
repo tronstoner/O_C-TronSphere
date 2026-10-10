@@ -1,0 +1,24 @@
+version: '3'
+# Host-side (macOS) tests and simulation. Included from the root Taskfile as
+# namespace `host:` with dir ./host. See docs/HOST_SIM.md.
+
+tasks:
+  test:
+    desc: Build and run host unit tests (host/tests/test_*.cpp)
+    cmds:
+      - ./run_tests.sh
+
+  render:
+    desc: Render a weegfx test frame to host/build/out (PBM, 4x PGM, ASCII)
+    cmds:
+      - ./run_render.sh
+
+  sim:
+    desc: 'Run the applet harness, e.g. task host:sim -- --in0 1536 --press --encoder +3 --seconds 2'
+    cmds:
+      - ./run_sim.sh {{.CLI_ARGS}}
+
+  clean:
+    desc: Remove host/build
+    cmds:
+      - rm -rf build

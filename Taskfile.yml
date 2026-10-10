@@ -1,0 +1,110 @@
+version: '3'
+silent: true
+
+# Developer CLI for the custom O_C (Teensy 3.2) firmware. See docs/BUILD.md.
+# Override the env per call:  task build ENV=custom_min_vor
+
+vars:
+  ENV: custom_min
+  FW_DIR: firmware/software
+  PIO_BUILD: '{{.FW_DIR}}/.pio/build/{{.ENV}}'
+  TEENSY_TOOLS: '{{.HOME}}/.platformio/packages/tool-teensy'
+  LOADER: '{{.TEENSY_TOOLS}}/teensy_loader_cli'
+  ARM_SIZE: '{{.HOME}}/.platformio/packages/toolchain-gccarmnoneeabi-teensy/bin/arm-none-eabi-size'
+  SHA:
+    sh: git rev-parse --short HEAD 2>/dev/null || echo nogit
+  HEX: 'build/{{.ENV}}-{{.SHA}}.hex'
+
+includes:
+  host:
+    taskfile: ./host/Taskfile.yml
+    dir: ./host
+    optional: true
+
+tasks:
+  default:
+    desc: List available tasks
+    cmds:
+      - task --list
+
+  setup:
+    desc: Check prerequisites and prefetch the Teensy toolchain
+    cmds:
+      - |
+        if ! command -v pio >/dev/null; then
+          echo "PlatformIO missing. Install with:  brew install platformio   (or: pipx install platformio)"
+          exit 1
+        fi
+        pio --version
+      - cd {{.FW_DIR}} && pio pkg install -e {{.ENV}}
+
+  build:
+    desc: Build firmware for ENV (default custom_min) and copy hex to build/<env>-<sha>.hex
+    cmds:
+      - cd {{.FW_DIR}} && pio run -e {{.ENV}}
+      - mkdir -p build
+      - |
+        src=$(ls -t {{.PIO_BUILD}}/*.hex | head -1)
+        cp "$src" "{{.HEX}}"
+        echo "-> {{.HEX}}  (from $src)"
+      - task: size
+
+  size:
+    desc: Print flash/RAM usage of the last ENV build
+    cmds:
+      - |
+        elf=$(ls -t {{.PIO_BUILD}}/*.elf 2>/dev/null | head -1)
+        [ -n "$elf" ] || { echo "No build for {{.ENV}} yet. Run: task build ENV={{.ENV}}"; exit 1; }
+        "{{.ARM_SIZE}}" -A "$elf" | awk -v elf="$elf" '
+          $1==".text"||$1==".ARM.exidx"||$1==".data" {flash+=$2}
+          $1==".data"||$1==".bss"||$1==".usbdescriptortable"||$1==".dmabuffers"||$1==".usbbuffers" {ram+=$2}
+          END {printf "%s\nFlash: %d / 262144 bytes (%.1f%%)\nRAM:   %d / 65536 bytes (%.1f%%)\n", elf, flash, flash*100/262144, ram, ram*100/65536}'
+
+  flash:
+    desc: Build, then upload with teensy_loader_cli (press the Teensy program button when prompted)
+    deps: [build]
+    cmds:
+      - task: _load
+
+  catch:
+    desc: Retry-flash the already-built hex until the Teensy bootloader appears (press program button any time)
+    cmds:
+      - |
+        [ -f "{{.HEX}}" ] || { echo "{{.HEX}} not found. Run: task build"; exit 1; }
+        echo "Waiting for Teensy bootloader... press the program button on the Teensy (Ctrl-C to abort)."
+        until "{{.LOADER}}" --mcu=TEENSY32 -v "{{.HEX}}" 2>/dev/null; do sleep 0.5; done
+        echo "Flashed {{.HEX}}."
+
+  _load:
+    internal: true
+    cmds:
+      - |
+        if [ -x "{{.LOADER}}" ]; then
+          echo "Press the program button on the Teensy (back of the O_C) now..."
+          "{{.LOADER}}" --mcu=TEENSY32 -w -v "{{.HEX}}"
+        else
+          echo "teensy_loader_cli not found, falling back to pio upload (teensy-gui)"
+          cd {{.FW_DIR}} && pio run -e {{.ENV}} -t upload
+        fi
+
+  clean:
+    desc: Clean PlatformIO build output for ENV and remove build/
+    cmds:
+      - cd {{.FW_DIR}} && pio run -e {{.ENV}} -t clean
+      - rm -rf build
+
+  monitor:
+    desc: Open the USB serial monitor (needs an env with a serial USB type, see docs/BUILD.md)
+    cmds:
+      - cd {{.FW_DIR}} && pio device monitor
+
+  upstream-fetch:
+    desc: Fetch upstream T32 and list new upstream commits (read-only; no merge)
+    cmds:
+      - git fetch upstream T32
+      - |
+        last=$(git log --grep='git-subtree-dir: firmware' --format=%B -n1 | sed -n 's/^git-subtree-split: //p' | head -1)
+        echo "Last pulled upstream split: ${last:-unknown}"
+        if [ -n "$last" ]; then git log --oneline "$last..upstream/T32"; else git log --oneline -20 upstream/T32; fi
+        echo
+        echo "To merge (main agent/user only):  git subtree pull --prefix firmware upstream T32 --squash"

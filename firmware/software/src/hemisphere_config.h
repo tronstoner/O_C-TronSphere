@@ -108,6 +108,13 @@
 #include "applets/TruthCat4.h"
 #include "applets/CVSeq.h"
 #include "applets/MiniArp.h"
+// --- custom build ---
+#ifdef CUSTOM_BUILD
+#define CUSTOM_APPLET_INCLUDES
+#include "custom/hemisphere_config_custom.h"
+#undef CUSTOM_APPLET_INCLUDES
+#endif
+// --- end custom build ---
 
 template<class A>
 struct DeclareApplet {
@@ -141,6 +148,11 @@ private:
 };
 
 AppletRegistry reg{
+// --- custom build ---
+#ifdef CUSTOM_BUILD
+#include "custom/hemisphere_config_custom.h"
+#else
+// --- end custom build ---
     // universal test applet :)
     DeclareApplet<Ponglet>{99, 0x00},
 
@@ -304,6 +316,7 @@ AppletRegistry reg{
 #endif
 
 #endif // !PEWPEWPEW
+#endif // --- custom build --- (!CUSTOM_BUILD)
 
 };
 

@@ -1,1 +1,17 @@
+# build output
+build/
+.pio/
+firmware/software/.pio/
+*.hex
+!release/**/*.hex
+!firmware/software/res/*.hex
+*.elf
+
+# editors / OS
 .DS_Store
+!.vscode/
+.vscode/*
+!.vscode/extensions.json
+.idea/
+*.swp
+*~
