@@ -1,0 +1,17 @@
+Release
+.cproject
+.gitignore.swp
+.settings/
+sloeber.ino.cpp
+.gitignore
+bin
+software/test/build
+.project
+.DS_Store
+shelved/
+builds
+.pio
+.vscode
+.cache/
+compile_commands.json
+*.hex

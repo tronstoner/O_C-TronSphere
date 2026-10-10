@@ -1,0 +1,81 @@
+#ifndef OC_GPIO_H_
+#define OC_GPIO_H_
+
+#include "OC_options.h"
+
+// These pins can be remapped for flip mode.
+extern uint8_t TR1, TR2, TR3, TR4;
+extern uint8_t encL1, encL2, butL, encR1, encR2, butR;
+extern uint8_t but_top, but_bot, but_mid, but_top2, but_bot2;
+
+static constexpr uint8_t OLED_DC = 6, OLED_RST = 7, OLED_CS = 8;
+static constexpr uint8_t DAC_CS = 10, DAC_RST = 9;
+static constexpr uint8_t OC_GPIO_DEBUG_PIN1 = 24, OC_GPIO_DEBUG_PIN2 = 25;
+static constexpr bool DAC_20Vpp = false;
+static constexpr bool DAC_is_inverted = false;
+
+#ifdef NORTHERNLIGHT
+static constexpr bool NorthernLightModular = true;
+#else
+static constexpr bool NorthernLightModular = false;
+#endif
+
+// OLED CS is active low
+#define OLED_CS_ACTIVE LOW
+#define OLED_CS_INACTIVE HIGH
+
+#define OC_GPIO_BUTTON_PINMODE INPUT_PULLUP
+#define OC_GPIO_TRx_PINMODE INPUT_PULLUP
+#define OC_GPIO_ENC_PINMODE INPUT_PULLUP
+
+/* local copy of pinMode (cf. cores/pins_teensy.c), using faster slew rate */
+// TODO: is this necessary? -NJM
+
+namespace OC {
+
+  void inline pinMode(uint8_t pin, uint8_t mode) {
+
+#if defined(__MK20DX256__)
+    volatile uint32_t* config;
+
+    if (pin >= CORE_NUM_DIGITAL) return;
+    config = portConfigRegister(pin);
+
+    if (mode == OUTPUT || mode == OUTPUT_OPENDRAIN) {
+  #ifdef KINETISK
+      *portModeRegister(pin) = 1;
+  #else
+      *portModeRegister(pin) |= digitalPinToBitMask(pin); // TODO: atomic
+  #endif
+      /* use fast slew rate for output */
+      *config = PORT_PCR_DSE | PORT_PCR_MUX(1);
+      if (mode == OUTPUT_OPENDRAIN) {
+        *config |= PORT_PCR_ODE;
+      } else {
+        *config &= ~PORT_PCR_ODE;
+      }
+    } else {
+  #ifdef KINETISK
+      *portModeRegister(pin) = 0;
+  #else
+      *portModeRegister(pin) &= ~digitalPinToBitMask(pin);
+  #endif
+      if (mode == INPUT) {
+        *config = PORT_PCR_MUX(1);
+      } else if (mode == INPUT_PULLUP) {
+        *config = PORT_PCR_MUX(1) | PORT_PCR_PE | PORT_PCR_PS;
+      } else if (mode == INPUT_PULLDOWN) {
+        *config = PORT_PCR_MUX(1) | PORT_PCR_PE;
+      } else { // INPUT_DISABLE
+        *config = 0;
+      }
+    }
+#else
+    ::pinMode(pin, mode); // for Teensy 4.x, just use normal pinMode
+#endif
+  }
+
+  void SetFlipMode(bool flip_180);
+}
+
+#endif // OC_GPIO_H_
