@@ -18,6 +18,11 @@ tasks:
     cmds:
       - ./run_sim.sh {{.CLI_ARGS}}
 
+  ui:
+    desc: 'Interactive SDL2 simulator window (brew install sdl2), e.g. task host:ui -- --scale 8'
+    cmds:
+      - ./run_sim.sh --ui {{.CLI_ARGS}}
+
   clean:
     desc: Remove host/build
     cmds:

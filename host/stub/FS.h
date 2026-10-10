@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Host stub for Teensy <FS.h>: enough File/String surface for OC_scales.cpp
 // (Scala load/save) to compile. Files are always empty on the host.
 #pragma once

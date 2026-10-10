@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Hello -- smoke-test applet and template for all custom applets (id 200).
 //
 // Core/glue split: all logic lives in custom/core/hello_core.h (pure C++17,

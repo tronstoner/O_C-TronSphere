@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Definitions for the globals that the host stubs (host/stub) declare.
 #include <Arduino.h>
 #include "OC_config.h"

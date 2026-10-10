@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Tier 2: render a test frame with the real weegfx on the host.
 #include <cassert>
 #include <cstdio>

@@ -60,15 +60,15 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 - `custom_min` currently 92,836 B flash / 20,472 B RAM.
 
 ### Open decisions
-- License for own code: GPLv3 for the whole repo (matches the combined work and NitroTron3)
-  vs MIT for `custom/` — user decision pending.
+- Master clock rework needed? Recommendation: defer; first module reads `HS::clock_m` directly,
+  revisit after hardware (`docs/clock/MASTER_CLOCK_CONCEPT.md` §0).
 - Open questions in `docs/clock/MASTER_CLOCK_CONCEPT.md` §6 and
   `docs/modules/evolving-voltage-concept.md` §6.
 
 ## Next Steps
 
 See `docs/ROADMAP.md`. Immediately next: flash `custom_min` on hardware and verify the Hello
-applet (Phase 1 remainder); then the user decides the license and the open questions in the
+applet (Phase 1 remainder); then the user decides the open questions in the
 clock and module concept docs.
 
 ## Decisions
@@ -82,3 +82,4 @@ clock and module concept docs.
 | 2026-10 | go-task (`Taskfile.yml`) as the CLI | Same pattern as NitroTron3; one discoverable entry point |
 | 2026-10 | Own applet IDs start at 200 | No collision with upstream IDs stored in presets |
 | 2026-10 | Host stubs via `-include` prelude + include-guard pre-definition, not only include-path shadowing | Quoted includes resolve next to the including file first, so shadowing alone cannot replace sibling HAL headers (see `docs/HOST_SIM.md`) |
+| 2026-10-10 | License: GPLv3 (GPL-3.0-or-later) for the whole repo, `LICENSE` at root | Combined work is GPLv3 anyway (4 GPLv3 upstream files); matches NitroTron3; repo may be published on GitHub. Details `docs/UPSTREAM.md` |

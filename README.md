@@ -29,5 +29,4 @@ buttons, inputs, outputs) once it is implemented.
 
 ## License
 
-Upstream files are mostly MIT; some core files are GPLv3, so distributed binaries are
-treated as GPLv3. Details in `docs/UPSTREAM.md`.
+License: GPLv3, see `LICENSE`; upstream components MIT/GPLv3, see `docs/UPSTREAM.md`.

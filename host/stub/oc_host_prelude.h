@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Force-included (-include) before every firmware TU in the host sim.
 //
 // Quoted sibling includes like "OC_ADC.h" are resolved from the including

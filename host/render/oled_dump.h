@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Dump a weegfx 128x64 frame (SH1106 page layout) as PBM, scaled PGM, ASCII.
 //
 // Layout (weegfx.h get_frame_ptr, SH1106 SendPage(index, frame + index*128)):

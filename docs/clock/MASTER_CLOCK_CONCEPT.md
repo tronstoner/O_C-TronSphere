@@ -4,6 +4,34 @@ Status: **concept, nothing implemented.** Open questions at the end need user de
 before an impl plan is written. Paths relative to `firmware/software/src/`; line numbers
 refer to the vendored `T32` snapshot.
 
+## 0. Assessment: is the rework needed?
+
+Status: **undecided (user).**
+
+**Already works without core changes**
+1. ClockSetup per-input-channel mult/div (x24 .. /32) on the internal clock, via the
+   both-buttons gesture (`APP_HEMISPHERE.h:671`); costs no slot.
+2. Any applet can divide its incoming clock internally (one integer parameter + counter).
+3. Applets can read `HS::clock_m` directly: `GetTempo()` (`HSClockManager.h:135`),
+   `IsRunning()` (`:318`), `Tock(ch)` (`:335`), `EndOfBeat(ch)` (`:344`) — e.g. an LFO with a
+   period in beats.
+
+**What a rework would add**
+- Bar/cycle phase — not derivable from pulses alone; needed for phase-locked LFOs and for
+  realigning polymeters without a reset trigger.
+- Free n/d ratios (3:2) on one channel.
+- Global instead of per-preset clock settings.
+- CV tempo without spending a slot on Metronome.
+
+**Minor fixes, independent of a redesign**
+- The commented-out internal-clock division in `CVInputMap.h:141-144` ("beat_tick gets reset").
+- Euclid settings of the trigger map are not persisted (`CVInputMap.h:213-220`).
+
+**Recommendation (pending user decision):** defer the bus rework. The first module reads
+`HS::clock_m` directly and derives its own division from one parameter. Revisit after that
+module runs on hardware; if needed, the smallest useful change is a bar-phase accessor plus
+the division fix (tens of lines), with the bus design below as fallback.
+
 ## 1. Current state (upstream T32)
 
 ### ClockManager — `HSClockManager.h`

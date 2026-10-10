@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Host replacements for firmware definitions whose real .cpp files are
 // hardware-bound (OC_core.cpp, OC_DAC.cpp, OC_gpio.cpp, OC_ADC.cpp, display,
 // hemisphere_config.h registry). Keep this list minimal; see docs/HOST_SIM.md.

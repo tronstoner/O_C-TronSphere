@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Ralf Traunsteiner
 # Tier 2: compile real weegfx.cpp on the host and render a test frame.
 set -eu
 HOST="$(cd "$(dirname "$0")" && pwd)"

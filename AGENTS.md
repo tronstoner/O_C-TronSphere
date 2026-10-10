@@ -122,5 +122,12 @@ ornamentandcrime/
   a change and report the delta; `docs/BUILD.md` records the current numbers.
 - RNG: use a seeded per-module xorshift32 (deterministic, host-reproducible); keep separate
   streams where "zero amount must consume no randomness" matters.
+- **License header for new files** in `custom/` and `host/` (repo is GPLv3, `LICENSE`):
+  ```
+  // SPDX-License-Identifier: GPL-3.0-or-later
+  // Copyright (C) 2026 Ralf Traunsteiner
+  ```
+  Never strip upstream headers in `firmware/`. Still missing the header:
+  `custom/applets/Hello.h`, `custom/core/hello_core.h`.
 - Prefer `constexpr` constants over `#define`; no dynamic allocation; no STL containers in
   firmware code.

@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Host stub for <Arduino.h>: just enough for the O_C sources compiled on macOS.
 // Shadows the Teensy core header because host/stub comes first on -I.
 #pragma once

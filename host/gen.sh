@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Ralf Traunsteiner
 # Generate host-patched copies of the few firmware files that cannot compile
 # on a 64-bit host as-is. firmware/ is never modified; copies go to build/gen.
 #   weegfx.cpp:533      print(uint32_t, size_t) vs header's (uint32_t, unsigned)

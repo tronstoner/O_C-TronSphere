@@ -57,3 +57,21 @@ Resolve conflicts using the file list below. Afterwards, update the measured siz
 ## Licensing
 
 Most upstream file headers are MIT. Four core files are **GPLv3**: `OC_DAC.cpp`, `SH1106_128x64_driver.cpp`, `grids_resources.h`, `grids2_resources.h`. Because they're linked into every build, **treat distributed binaries as GPLv3** (ship source with any released hex).
+
+### Decision (2026-10-10): GPLv3 for the whole repo
+
+- **Our code** (`custom/`, `host/`, `tools/`, docs) is licensed GPL-3.0-or-later; full text in
+  `/LICENSE`. New files carry an SPDX header (see `AGENTS.md` § O_C coding rules).
+- **The combined work** (any built firmware) is GPLv3 anyway, because the four GPLv3 upstream
+  files above are linked into every build.
+- **Upstream MIT headers stay intact.** Never strip or rewrite copyright/license headers in
+  `firmware/`; MIT code may be distributed under GPLv3 as part of the combined work, but its
+  notices must be kept.
+
+### Publishing on GitHub
+
+- Anyone who receives a hex/binary must be able to get the corresponding source. The public
+  repo satisfies this as long as every released hex is built from a tagged, pushed commit
+  (name the commit/tag in the release notes).
+- Keep upstream attribution: the `firmware/` subtree with its history, upstream file headers,
+  and the lineage (mxmxmx → Hemisphere Suite → Benisphere → Phazerville) in `README.md`/docs.

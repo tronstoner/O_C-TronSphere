@@ -1,0 +1,16 @@
+-xc++
+-std=c++17
+-I..
+-I./stub
+-I./build/gen
+-I./sim
+-I./render
+-I../firmware/software/src
+-I../firmware/software/src/util
+-I../firmware/software/src/src/drivers
+-I../firmware/software/src/extern
+-I/opt/homebrew/include/SDL2
+-I/usr/local/include/SDL2
+-D_THREAD_SAFE
+-include
+./stub/oc_host_prelude.h

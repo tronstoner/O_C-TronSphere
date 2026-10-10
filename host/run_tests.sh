@@ -1,4 +1,6 @@
 #!/bin/sh
+# SPDX-License-Identifier: GPL-3.0-or-later
+# Copyright (C) 2026 Ralf Traunsteiner
 # Compile and run every host/tests/test_*.cpp. Non-zero exit if any fails.
 set -u
 HOST="$(cd "$(dirname "$0")" && pwd)"

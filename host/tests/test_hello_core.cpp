@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // Host unit tests for custom::HelloCore (pure C++17, no stubs).
 #include <cstdio>
 #include "custom/core/hello_core.h"

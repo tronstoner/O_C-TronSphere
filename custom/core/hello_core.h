@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: GPL-3.0-or-later
+// Copyright (C) 2026 Ralf Traunsteiner
 // hello_core.h -- pure, hardware-independent logic for the Hello applet.
 //
 // Pattern: custom/core/*.h holds plain C++17 (no Arduino/O_C includes) so it
