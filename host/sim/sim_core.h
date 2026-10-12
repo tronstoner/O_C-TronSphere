@@ -19,8 +19,11 @@ constexpr int kFrameBytes = 128 * 64 / 8;
 enum Side { kLeft = 0, kRight = 1 };
 
 // Boot: frame, HS::Init (default cvmap/trigmap), start applets.
-// left/right: whether a Hello instance runs in that hemisphere.
-void Init(bool left, bool right);
+// left/right: applet name from the host registry (host_applets.h, matched
+// case-insensitively), nullptr = empty hemisphere. Returns false (and boots
+// nothing) on an unknown name.
+bool Init(const char *left, const char *right);
+const char *AppletNames();           // "Hello, ClockEcho, ..." for usage texts
 bool Active(Side s);
 
 void Tick();                         // one ISR tick (all active applets)
@@ -35,8 +38,34 @@ int32_t Cv(int ch);
 void SetGate(int ch, bool high);
 bool Gate(int ch);
 
+// Periodic clock source: pulses of kTrigTicks on physical TR `tr` (0..3),
+// bpm * ppb pulses per minute. Gate level = manual gate OR any pulse.
+constexpr int kTrigTicks = 17;       // ~1 ms, HEMISPHERE_CLOCK_TICKS
+void SetClock(double bpm, int ppb, int tr);
+void SetClockBpm(double bpm);        // keeps phase (next pulse = last + period)
+void ClockEnable(bool on);           // enabling fires the first pulse on the next tick
+bool ClockEnabled();
+double ClockBpm();
+int ClockPpb();
+int ClockTr();
+// One kTrigTicks pulse on TR `tr` starting at simulated time t seconds
+// (fires on the next tick if t already passed).
+void ScheduleTrigger(int tr, double t);
+
 // Outputs (pitch units, frame.ViewOut)
 int32_t Out(int ch);
+// Output observation, evaluated after every tick (after frame.Send()).
+// Change: any ViewOut value change. Trigger: ClockOut() fired (countdown
+// started/restarted) or the value jumped up to exactly the GateOut level.
+enum TrigKind { kTrigClockOut = 0, kTrigGateOut = 1 };
+struct OutListener {
+  virtual ~OutListener() {}
+  virtual void OnChange(double t, int ch, int32_t units) { (void)t; (void)ch; (void)units; }
+  virtual void OnTrigger(double t, int ch, TrigKind kind) { (void)t; (void)ch; (void)kind; }
+};
+void SetOutListener(OutListener *l);  // nullptr = none
+// Tick of the last output trigger on ch, or -1 if none yet.
+int64_t LastOutTrigTick(int ch);
 
 // UI controls, mirroring what APP_HEMISPHERE delegates on button release.
 void EncoderMove(Side s, int detents);   // OnEncoderMove per detent

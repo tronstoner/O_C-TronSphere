@@ -25,15 +25,22 @@ Per `docs/clock/MASTER_CLOCK_CONCEPT.md`, after the user answers its open questi
 drift (host test + scope on hardware); any applet's `Clock(ch)` can follow a bus via the
 input map; tempo reachable in one gesture; settings persist as decided (global/per preset).
 
-## Phase 3 — Evolving voltage module
+## Phase 3 — Likembe (one part per applet)
+Per `docs/modules/likembe.md` / `likembe-impl-plan.md`: core → host tests → glue → visualization → hardware.
+**Done when:**
+- [x] Core + constants implemented, host tests pass (`task host:test`).
+- [ ] Glue applet with controls, I/O and visualization (loops of different lengths visible).
+- [ ] Runs clocked from TR1 on hardware, two instances (e.g. Bass + Lead) interlock; module doc as built.
+
+## Phase 4 — Evolving voltage module
 Per `docs/modules/evolving-voltage-concept.md` → impl plan → host → hardware.
 **Done when:** the module runs bus-clocked on hardware, L = 0 is steady and consumes no
 randomness, evolution per pass audibly musical, module doc with full controls table.
 
-## Phase 4 — LFO
+## Phase 5 — LFO
 Concept first (compare `EbbAndLfo`, `VectorLFO`), bus-phase-synced via `Phase(bus)`.
 **Done when:** concept decided, implemented, phase-locked to buses verified on hardware.
 
-## Phase 5+ — One module at a time
+## Phase 6+ — One module at a time
 Further own modules or individual upstream applets, each on explicit decision, each with
 its own entry in `docs/PROJECT.md` § Decisions and a flash-budget check.

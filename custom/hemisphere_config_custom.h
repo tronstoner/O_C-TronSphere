@@ -12,8 +12,10 @@
 //    (upstream headers are already included by hemisphere_config.h).
 #ifdef CUSTOM_APPLET_INCLUDES
 #include "custom/applets/Hello.h"
+#include "custom/applets/Likembe.h"
 #else
     DeclareApplet<Hello>{200, 0x80},
+    DeclareApplet<Likembe>{201, 0x02},
     // Upstream opt-ins (example, disabled):
     // DeclareApplet<Voltage>{43, 0x10},
 #endif

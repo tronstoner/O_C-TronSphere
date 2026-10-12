@@ -16,6 +16,7 @@
 #include <cstring>
 #include <string>
 #include <sys/stat.h>
+#include <utility>
 #include <vector>
 
 #include "oled_dump.h"
@@ -56,6 +57,7 @@ std::string Volts(int32_t units) {
 std::string Raw(int32_t units) { return Printf("%+6d", (int)units); }
 std::string Seconds(double s) { return Printf("%.3f s", s); }
 std::string Ratio(double r) { return Printf("%.2fx", r); }
+std::string Bpm(double b) { return Printf("%g BPM", b); }
 }  // namespace fmt
 
 // ---------------------------------------------------------------------------
@@ -63,6 +65,8 @@ constexpr int kOledW = 128, kOledH = 64;
 constexpr int kCvMin = -10 * simcore::kUnitsPerVolt, kCvMax = 10 * simcore::kUnitsPerVolt;
 constexpr int kSemitone = 128, kOctave = simcore::kUnitsPerVolt;
 constexpr int kStepTicks = 17;                       // '.' = 1 ms
+constexpr int kBpmStep = 5, kBpmMin = 5, kBpmMax = 600;
+constexpr uint32_t kTrigFlashTicks = simcore::kTickHz / 20;  // output trigger marker: 50 ms
 constexpr uint32_t kMaxTicksPerFrame = simcore::kTickHz / 10;  // drop backlog beyond 100 ms
 
 constexpr uint32_t kOn = 0xE8F2FF, kOnGap = 0x6C7682, kOff = 0x08080A;
@@ -71,7 +75,11 @@ constexpr uint32_t kPanelBg = 0x1A1C20, kText = 0xD0D4DA, kDim = 0x7C828C,
 
 struct Options {
   int scale = 6;
-  bool right = true;
+  std::string left = "Hello", right = "Hello";  // "none" = empty
+  bool clock = false;                            // --clock given: start running
+  double bpm = 120;
+  int ppb = 4, clock_tr = 0;
+  std::vector<std::pair<int, double>> trigs;     // --trig N@T
   bool headless = false;
   double shot_after = -1;
   std::string out = ".";
@@ -196,6 +204,17 @@ void OnKey(Ui &u, SDL_Keycode k, bool shift, bool down, bool repeat) {
       simcore::ResetApplet(kRight);
       Msg(u, "Reset()+Start() on all applets");
       break;
+    case SDLK_t:
+      if (repeat) break;
+      simcore::ClockEnable(!simcore::ClockEnabled());
+      Msg(u, fmt::Printf("clock %s", simcore::ClockEnabled() ? "running" : "stopped"));
+      break;
+    case SDLK_LEFTBRACKET: case SDLK_RIGHTBRACKET: {
+      double b = simcore::ClockBpm() + (k == SDLK_RIGHTBRACKET ? kBpmStep : -kBpmStep);
+      simcore::SetClockBpm(b < kBpmMin ? kBpmMin : (b > kBpmMax ? kBpmMax : b));
+      Msg(u, "clock " + fmt::Bpm(simcore::ClockBpm()));
+      break;
+    }
     case SDLK_ESCAPE: u.quit = true; break;
     default: break;
   }
@@ -259,7 +278,10 @@ void DrawPanel(Ui &u) {
     c = Text(u, c, r, g ? kHigh : kDim, g ? "HIGH" : "low ");
     if (u.gate_latch[ch]) Text(u, c + 1, r, kAccent, "L");
     const int32_t o = simcore::Out(ch);
-    Text(u, 38, r, kText, fmt::Printf("%c %9s %s", 'A' + ch, fmt::Volts(o).c_str(), fmt::Raw(o).c_str()));
+    c = Text(u, 38, r, kText, fmt::Printf("%c %9s %s", 'A' + ch, fmt::Volts(o).c_str(), fmt::Raw(o).c_str()));
+    const int64_t lt = simcore::LastOutTrigTick(ch);
+    const bool flash = lt >= 0 && (int64_t)simcore::Ticks() - lt < (int64_t)kTrigFlashTicks;
+    Text(u, c + 1, r, flash ? kHigh : kDim, flash ? "*" : ".");
   }
   ++r;
   for (int h = 0; h < 2; ++h) {
@@ -279,6 +301,10 @@ void DrawPanel(Ui &u) {
   else if (u.paused) Text(u, c + 2, r, kAccent, "PAUSED");
   else Text(u, c + 2, r, u.ratio < 0.98 ? kWarn : kHigh,
             "RUN " + fmt::Ratio(u.ratio) + (u.ratio < 0.98 ? " BEHIND" : ""));
+  ++r;
+  c = Text(u, 1, r, kDim, "CLOCK ");
+  c = Text(u, c, r, kText, fmt::Bpm(simcore::ClockBpm()) + fmt::Printf(" x%d/beat -> TR%d", simcore::ClockPpb(), simcore::ClockTr() + 1));
+  Text(u, c + 2, r, simcore::ClockEnabled() ? kHigh : kDim, simcore::ClockEnabled() ? "RUNNING" : "stopped");
   r += 2;
   const char *legend[] = {
       "A/D  left enc -/+      S  left push      Q  Up button",
@@ -286,6 +312,7 @@ void DrawPanel(Ui &u) {
       "1-4  select CV   Up/Dn +-1 semi   Shift+Up/Dn +-1 oct",
       "0    zero CV     Z X C V  gate TR1-4 (hold), Shift latch",
       "Space pause   . step 1ms   P screenshot   R reset   Esc",
+      "T    clock on/off   [ ] clock BPM -/+5   * = output trigger",
   };
   for (const char *l : legend) Text(u, 1, r++, kDim, l);
   ++r;
@@ -345,6 +372,8 @@ void InjectKeys(Ui &u) {
     else if (t == "down") k = SDLK_DOWN;
     else if (t == "space") k = SDLK_SPACE;
     else if (t == "esc") k = SDLK_ESCAPE;
+    else if (t == "lbracket") k = SDLK_LEFTBRACKET;
+    else if (t == "rbracket") k = SDLK_RIGHTBRACKET;
     else if (t.size() == 1) k = (SDL_Keycode)std::tolower((unsigned char)t[0]);
     else { std::fprintf(stderr, "--keys: unknown key '%s'\n", t.c_str()); std::exit(2); }
     if (phase != 2) OnKey(u, k, shift, true, false);
@@ -354,10 +383,16 @@ void InjectKeys(Ui &u) {
 
 void Usage() {
   std::puts(
-      "usage: ui [--scale N] [--right hello|none] [--keys LIST]\n"
+      "usage: ui [--scale N] [--left NAME|none] [--right NAME|none] [--keys LIST]\n"
+      "          [--clock BPM[:DIV]] [--clock-tr N] [--trig N@T]\n"
       "          [--screenshot-after S] [--headless] [--out DIR]\n"
       "  --scale N             OLED pixel scale (default 6)\n"
-      "  --right hello|none    right hemisphere applet (default hello)\n"
+      "  --left NAME|none      left hemisphere applet (default Hello)\n"
+      "  --right NAME|none     right hemisphere applet (default Hello)\n"
+      "  --clock BPM[:DIV]     start the clock source (DIV pulses/beat, default 4);\n"
+      "                        without it the source is stopped at 120:4 (T starts it)\n"
+      "  --clock-tr N          TR input 1..4 driven by the clock (default 1)\n"
+      "  --trig N@T            one 1 ms trigger on TR N at T s (repeatable)\n"
       "  --keys LIST           key events at start, e.g. s,d,d,3,shift+up,down:z\n"
       "  --screenshot-after S  save a screenshot at simulated time S and quit\n"
       "  --headless            no window; simulated time runs unpaced (needs\n"
@@ -375,7 +410,25 @@ int main(int argc, char **argv) {
       return argv[++i];
     };
     if (a == "--scale") u.opt.scale = std::atoi(next());
-    else if (a == "--right") u.opt.right = std::string(next()) != "none";
+    else if (a == "--left") u.opt.left = next();
+    else if (a == "--right") u.opt.right = next();
+    else if (a == "--clock") {
+      const char *v = next();
+      u.opt.clock = true;
+      u.opt.bpm = std::atof(v);
+      if (const char *c = std::strchr(v, ':')) u.opt.ppb = std::atoi(c + 1);
+      if (u.opt.bpm <= 0 || u.opt.ppb < 1) { std::fprintf(stderr, "--clock BPM[:DIV], both > 0\n"); return 2; }
+    } else if (a == "--clock-tr" || a == "--trig") {
+      const char *v = next();
+      const int n = std::atoi(v);
+      if (n < 1 || n > 4) { std::fprintf(stderr, "%s: TR must be 1..4\n", a.c_str()); return 2; }
+      if (a == "--clock-tr") u.opt.clock_tr = n - 1;
+      else {
+        const char *at = std::strchr(v, '@');
+        if (!at) { std::fprintf(stderr, "--trig N@T\n"); return 2; }
+        u.opt.trigs.push_back({n - 1, std::atof(at + 1)});
+      }
+    }
     else if (a == "--keys") u.opt.keys = next();
     else if (a == "--screenshot-after") u.opt.shot_after = std::atof(next());
     else if (a == "--headless") u.opt.headless = true;
@@ -389,10 +442,14 @@ int main(int argc, char **argv) {
   u.W = kOledW * u.opt.scale;
   if (u.W < 64 * 6 * u.p) u.W = 64 * 6 * u.p;  // panel needs 64 columns
   u.oled_h = kOledH * u.opt.scale;
-  u.H = u.oled_h + 4 * u.p + 17 * LineH(u);
+  u.H = u.oled_h + 4 * u.p + 19 * LineH(u);
   u.px.assign((size_t)u.W * u.H, kOff);
 
-  simcore::Init(true, u.opt.right);
+  auto name = [](const std::string &n) { return n == "none" ? nullptr : n.c_str(); };
+  if (!simcore::Init(name(u.opt.left), name(u.opt.right))) return 2;
+  simcore::SetClock(u.opt.bpm, u.opt.ppb, u.opt.clock_tr);
+  simcore::ClockEnable(u.opt.clock);
+  for (const auto &t : u.opt.trigs) simcore::ScheduleTrigger(t.first, t.second);
   InjectKeys(u);
 
   const double frame_ticks = (double)simcore::kTickHz / 60.0;  // ~278

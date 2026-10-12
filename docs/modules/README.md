@@ -8,7 +8,8 @@ are in `firmware/software/src/applets/`. None of them is enabled in our build.
 
 | Module | Status | Doc |
 |---|---|---|
-| Evolving voltage (name TBD) | concept | `evolving-voltage-concept.md` |
+| Likembe (one part per applet) | core + host tests done, glue pending | `likembe.md`, `likembe-impl-plan.md` |
+| Evolving voltage (name TBD) | concept (after Likembe) | `evolving-voltage-concept.md` |
 | Algorithmic voltage sources | idea | — |
 | Better LFO | idea | — |
 

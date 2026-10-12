@@ -35,6 +35,10 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 | `docs/HOST_SIM.md` | current | Host test harness and simulator |
 | `docs/clock/MASTER_CLOCK_CONCEPT.md` | concept | Clock buses proposal |
 | `docs/modules/README.md` | current | Module index + overlapping upstream applets |
+| `docs/modules/likembe.md` | current | Likembe module doc (as built, hardware pending) |
+| `docs/modules/likembe-impl-plan.md` | current | Likembe steps, API, doc/JS deviations, open questions |
+| `docs/research/Likembe pattern engine technical concept.md` | reference | Likembe pattern engine spec |
+| `docs/research/Congotronics line generator.html` | reference | JS reference implementation of the pattern engine |
 | `docs/modules/evolving-voltage-concept.md` | concept | Vestige-derived evolving voltage/trigger module |
 | `docs/research/phazerville-notes.md` | current | Upstream facts, lineage, applet API, inventory |
 | `docs/research/nitrotron3-lessons.md` | current | What carries over from the NitroTron3 project |
@@ -58,6 +62,9 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   SDL interactive sim planned, not built.
 - Host gaps: one applet on one side; no ClockSetup/internal clock; no MIDI/EEPROM.
 - `custom_min` currently 92,836 B flash / 20,472 B RAM.
+- Likembe (Phase 3): core + glue (`custom/applets/Likembe.h`, ID 201) implemented, host tests
+  pass, sim-verified (I/O timing, re-roll at bar line, CV1 density, screenshots). Not yet on
+  hardware. `custom_min` now 97,700 B flash / 20,744 B RAM. Mi-solo/Solo profiles provisional.
 
 ### Open decisions
 - Master clock rework needed? Recommendation: defer; first module reads `HS::clock_m` directly,
@@ -67,9 +74,10 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 
 ## Next Steps
 
-See `docs/ROADMAP.md`. Immediately next: flash `custom_min` on hardware and verify the Hello
-applet (Phase 1 remainder); then the user decides the open questions in the
-clock and module concept docs.
+See `docs/ROADMAP.md`. Immediately next: user answers the open questions in
+`docs/modules/likembe-impl-plan.md`; flash `custom_min` and verify Likembe on hardware
+(clock on TR1, two instances Bass + Lead, display readability, tune provisional profiles).
+Hello hardware check (Phase 1 remainder) can be done with the same flash.
 
 ## Decisions
 
@@ -82,4 +90,5 @@ clock and module concept docs.
 | 2026-10 | go-task (`Taskfile.yml`) as the CLI | Same pattern as NitroTron3; one discoverable entry point |
 | 2026-10 | Own applet IDs start at 200 | No collision with upstream IDs stored in presets |
 | 2026-10 | Host stubs via `-include` prelude + include-guard pre-definition, not only include-path shadowing | Quoted includes resolve next to the including file first, so shadowing alone cannot replace sibling HAL headers (see `docs/HOST_SIM.md`) |
+| 2026-10 | Phase 3 = Likembe, one part per applet instance; evolving voltage moves after it | User decision |
 | 2026-10-10 | License: GPLv3 (GPL-3.0-or-later) for the whole repo, `LICENSE` at root | Combined work is GPLv3 anyway (4 GPLv3 upstream files); matches NitroTron3; repo may be published on GitHub. Details `docs/UPSTREAM.md` |

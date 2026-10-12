@@ -22,8 +22,11 @@ host/
   tests/test_hello_core.cpp
   render/render_main.cpp, render/oled_dump.h   frame -> PBM / 4x PGM / ASCII
   render/png.h          dependency-free PNG writer (stored deflate)
-  sim/sim_core.h/.cpp   THE tick loop + render + controls, shared by sim and ui;
-                        the header has no firmware includes
+  sim/sim_core.h/.cpp   THE tick loop + render + controls + clock source +
+                        output observation, shared by sim and ui; the header
+                        has no firmware includes
+  sim/host_applets.h    host applet registry (name -> factory) for --left/--right
+  sim/applets/ClockEcho.h  host-only sanity applet (TR1 -> ClockOut A, TR2 -> GateOut B)
   sim/sim_main.cpp      tier 3: CLI script runner on top of sim_core
   sim/ui_main.cpp       tier 4: SDL2 window + panel on top of sim_core
   sim/host_runtime.cpp  globals declared by stubs (time, pins, CV, usbMIDI)
@@ -47,22 +50,79 @@ task host:clean      # removes host/build (both binaries, libsimcore.a, outputs)
 
 ### Sim script
 
-Arguments run left to right against `Hello` (left hemisphere by default):
+Boot options are position-independent and resolved before the script; the
+remaining arguments run left to right against the left applet (or the right
+one if the left hemisphere is empty).
 
-| arg | effect |
+| boot option | effect |
+|---|---|
+| `--left NAME\|none` | left applet from the host registry (default `Hello`), case-insensitive |
+| `--right NAME\|none` | right applet (default `none`; uses inputs/outputs 3,4) |
+| `--side L\|R\|LR` | legacy shorthand: `Hello` left, right or both; `--left`/`--right` win |
+| `--clock BPM[:DIV]` | periodic clock source, DIV pulses per beat (default 4): `120:4` = 8 pulses/s, `120:6` = 16th triplets; running from t=0 |
+| `--clock-tr N` | TR input 1..4 the clock drives (default 1 = TR1 = `Clock(0)` of the left applet) |
+| `--trig N@T` | one trigger on TR N (1..4) at simulated time T s; repeatable |
+| `--log-outputs FILE` | CSV, see "Output logging" (relative paths are under `host/build/out`) |
+| `--log-events` | one stdout line per output trigger |
+
+| script arg | effect |
 |---|---|
 | `--seconds S` / `--ticks N` | run the ISR loop at `OC_CORE_ISR_FREQ` (16666 Hz) |
 | `--inK V` | CV input K (0..3), pitch units: 128 = 1 semitone, 1536 = 1 V |
 | `--gateK 0\|1` | trigger input K (0..3) |
 | `--encoder N` | N detents through `OnEncoderMove` |
 | `--press` | `OnButtonPress` (toggles edit mode) |
-| `--side L\|R\|LR` | boot option: Hello on the left, right (inputs/outputs 2,3) or both; with `LR`, `--encoder`/`--press` address the left one |
 | `--out DIR` / `--quiet` | output dir (default host/build/out) / no ASCII dump |
 
 At the end it prints simulated time, edit state, `frame.ViewOut(0..3)`, writes
 `sim.pbm` + `sim_x4.pgm` and dumps the frame as half-block ASCII. Example:
 `--in0 1536 --in1 -768 --press --encoder +3 --seconds 0.5` gives
 `out0=1920 out1=-384`; `--encoder -70` clamps at `HEMISPHERE_MIN_CV` (-4608).
+
+### Clock source and triggers
+
+`--clock`, `--trig` and the UI's `T` drive the *physical* TR pins
+(`host_pin_level[]`, active low), so the firmware's own path runs:
+`frame.Load()` -> `trigmap` -> `CVInputMap::Clock()` edge detection ->
+`frame.clocked[]` -> `Clock(ch)`. Each pulse is high for 17 ticks (~1 ms,
+`HEMISPHERE_CLOCK_TICKS`) and is seen exactly once (one rising edge). The
+pin level is manual gate (`--gateK`, keys) OR any pulse. Pulse starts are
+scheduled on a fractional tick grid (period = 16666*60/(BPM*DIV) ticks,
+2083.25 at 120:4), so there is no long-term drift; individual edges land on
+the nearest following tick (jitter < 60 us). The first clock pulse fires on
+the first tick (t = 0.000060 s).
+
+### Output logging
+
+After every tick `sim_core` compares `frame.ViewOut(0..3)` with the previous
+tick and reports to a listener (`simcore::SetOutListener`):
+
+- **change**: any value change. `--log-outputs FILE` writes
+  `t_seconds,out_index,value_units,value_volts` (index 0..3 = A..D, 6 / 4
+  decimals), starting with one row per output at t=0 with the initial value.
+- **trigger**: `ClockOut()` fired (the frame's `clock_countdown` started or
+  restarted) -> `ClockOut`; or the value jumped up to exactly the `GateOut`
+  level (`PULSE_VOLTAGE * ONE_OCTAVE`, 6 V with the default `octave_max`) ->
+  `GateOut`. A pitch CV that lands exactly on 6 V would also count.
+  `--log-events` prints `event t=0.125105 out=A trig=ClockOut`.
+
+Sanity check with the host-only `ClockEcho` applet:
+
+```sh
+task host:sim -- --left ClockEcho --clock 120:4 --seconds 2 --log-events --quiet
+# 16 lines: event t=0.000060 out=A trig=ClockOut ... t=1.875075, 0.125 s apart
+task host:sim -- --left ClockEcho --trig 2@0.5 --seconds 1 --log-events --quiet
+# event t=0.500000 out=B trig=GateOut
+```
+
+### Adding an applet to the host registry
+
+`host/sim/host_applets.h`: include the applet header and add one row to
+`kHostApplets` below the comment `add new applets here`, e.g.
+`{"Likembe", MakeApplet<Likembe>},`. Both front ends pick it up for
+`--left`/`--right`; `run_sim.sh` rebuilds `libsimcore.a` when `custom/`,
+`host_applets.h` or `host/sim/applets/` change. Host-only helper applets go
+to `host/sim/applets/` (never into the firmware build).
 
 Both front ends call the same `simcore::Tick()` / `simcore::Render()`
 (`host/sim/sim_core.cpp`). Per tick it mirrors `HSApplication::BaseController` + `HemisphereManager::Controller`:
@@ -80,8 +140,11 @@ task host:ui -- --scale 8 --right none
 A native window shows the OLED (scaled, with a pixel grid) and a panel below
 it. Same `sim_core` as the scripted harness, so what you see is the real
 `HemisphereApplet` code. Options: `--scale N` (1..16, default 6),
-`--right hello|none`, `--keys LIST`, `--screenshot-after S`, `--headless`,
-`--out DIR` (default `host/build/out`).
+`--left NAME|none`, `--right NAME|none` (both default `Hello`),
+`--clock BPM[:DIV]` (starts the clock source running; without it the source
+is configured 120:4 but stopped), `--clock-tr N`, `--trig N@T`, `--keys LIST`,
+`--screenshot-after S`, `--headless`, `--out DIR` (default `host/build/out`).
+`--screenshot-after` works with `--clock` (the clock runs in simulated time).
 
 ### Keys
 
@@ -104,6 +167,8 @@ it. Same `sim_core` as the scripted harness, so what you see is the real
 | `.` | single step 1 ms (17 ticks), works while paused | |
 | `P` | screenshot | |
 | `R` | `Reset()` then `Start()` on every applet | |
+| `T` | clock source on/off (first pulse on the next tick) | |
+| `[` / `]` | clock BPM -/+ 5 (5..600), phase kept | |
 | `Esc` | quit | |
 
 Encoder long-press is not mapped: the Hemisphere app uses it for app-level
@@ -118,7 +183,10 @@ control resets unrelated state.
 
 - **INPUTS**: CV1..4 as volts and raw pitch units (selected row highlighted),
   TR1..4 `HIGH`/`low`, `L` when latched.
-- **OUTPUTS**: A..D from `frame.ViewOut()`, volts + raw.
+- **OUTPUTS**: A..D from `frame.ViewOut()`, volts + raw, then a trigger
+  marker: `*` (green) for 50 ms of simulated time after an output trigger
+  (ClockOut/GateOut, same detection as `--log-events`), `.` otherwise.
+- **CLOCK**: BPM, pulses per beat, target TR, `RUNNING`/`stopped`.
 - Applet per hemisphere with edit state (`edit ON`/`edit off`).
 - Simulated time (s and ticks), `PAUSED` or `RUN <ratio>x`; the ratio is
   simulated/wall time over 0.5 s and turns red with `BEHIND` below 0.98.
@@ -126,7 +194,9 @@ control resets unrelated state.
 
 All numbers go through one formatter (`fmt::` in `ui_main.cpp`): volts =
 units / 1536 with 2 decimals and an explicit sign (`+0.00 V`, never `-0.00`),
-raw as signed integer, time in seconds with 3 decimals. Change
+raw as signed integer, time in seconds with 3 decimals, BPM via `fmt::Bpm`.
+The scripted harness has its own single formatter (`fmt::` in `sim_main.cpp`,
+`kTimeDecimals`/`kVoltDecimals`) for CSV and event lines. Change
 `fmt::kVoltDecimals` there. The panel text uses the firmware's own 6x8 font
 (`src/extern/gfx_font_6x8.h`), no font dependency.
 
@@ -152,7 +222,7 @@ with the next free number `NNN`:
 
 For checks without touching the keyboard, combine with `--keys` (comma list,
 applied at t=0 through the same key handler; `shift+up`, `down:z`/`up:z` for
-explicit press/release) and `--headless`:
+explicit press/release, `lbracket`/`rbracket` for `[`/`]`) and `--headless`:
 
 ```sh
 host/run_sim.sh --ui --headless --screenshot-after 0.5 --keys s,d,d,d,1,shift+up
@@ -161,13 +231,9 @@ host/run_sim.sh --ui --headless --screenshot-after 0.5 --keys s,d,d,d,1,shift+up
 
 ### Limits / adding applets
 
-- Applet is `Hello` only; right hemisphere is a second `Hello` instance or empty.
+- Applets: whatever `host/sim/host_applets.h` lists (see "Adding an applet to the host registry").
 - No clock setup, select mode, help/config screens, presets, MIDI, EEPROM.
 
-To add an applet: include its header in `sim_core.cpp`, replace the
-`Hello applets[2]` array with `HemisphereApplet *applets[2]` pointing at
-instances chosen by name, and pass the names through `simcore::Init()` from
-an `--applet NAME` / `--right NAME` option in both front ends.
 
 ## Display mapping
 
@@ -226,11 +292,11 @@ Replaced by `host/sim/host_firmware.cpp` (real `.cpp` is hardware-bound):
    copy the `TEST`/`CHECK`/`RUN` macros from `test_hello_core.cpp`, return non-zero on failure.
 3. `task host:test` picks it up (glob), flags `-O2 -std=c++17 -Wall -Wextra -Werror -I<repo>`.
 
-To simulate a new applet: see "Limits / adding applets" above (`sim_core.cpp`).
+To simulate a new applet: add it to `host/sim/host_applets.h` (see "Adding an applet to the host registry").
 
 ## Known gaps
 
-- One applet type (`Hello`, one per hemisphere); no `HemisphereManager`, no applet registry,
+- Host registry only (`host_applets.h`), one applet per hemisphere; no `HemisphereManager`,
   presets, config menu, clock setup (`ClockSetup_instance.Controller()` is
   skipped, so the internal clock never ticks), MIDI in/out, EEPROM.
 - Outputs are read from `frame.ViewOut()` (pitch units), not DAC codes; the
@@ -243,6 +309,5 @@ To simulate a new applet: see "Limits / adding applets" above (`sim_core.cpp`).
 
 ## Next steps
 
-- `--applet NAME` switch, CSV trace of outputs per tick.
 - Tick `ClockSetup`/`HemisphereManager` for select mode and clock setup in the UI.
 - Golden-image tests: compare `sim.pbm` against checked-in references.

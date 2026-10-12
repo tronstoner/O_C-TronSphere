@@ -1,0 +1,698 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Congotronics line generator</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Big+Shoulders+Display:wght@600;800&family=Atkinson+Hyperlegible:wght@400;700&display=swap" rel="stylesheet">
+<style>
+:root{
+  --bg:#DCEBFA; --panel:#F5F9FF; --ink:#0E1B3D; --muted:#46557A; --sky:#1C6FD0; --sun:#F2C40F; --flame:#D2232A; --line:#B6CBE9; --tint:#CFE2F8;
+  box-sizing:border-box;
+  padding-top:env(safe-area-inset-top,0px);
+  padding-bottom:env(safe-area-inset-bottom,0px);
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    --bg:#0C1630; --panel:#13204A; --ink:#E7EEFB; --muted:#9DB0D6; --sky:#5AA8FF; --sun:#F7D33A; --flame:#FF5C61; --line:#2A3D72; --tint:#17275A;
+  }
+}
+:root[data-theme="dark"]{
+  --bg:#0C1630; --panel:#13204A; --ink:#E7EEFB; --muted:#9DB0D6; --sky:#5AA8FF; --sun:#F7D33A; --flame:#FF5C61; --line:#2A3D72; --tint:#17275A;
+}
+html{scroll-padding-top:env(safe-area-inset-top,0px)}
+*,*::before,*::after{box-sizing:inherit}
+body{margin:0;background:var(--bg);color:var(--ink);font-family:"Atkinson Hyperlegible",system-ui,-apple-system,"Segoe UI",sans-serif;font-size:16px;line-height:1.5}
+.wrap{max-width:1180px;margin:0 auto;padding:28px 20px 48px}
+header h1{font-family:"Big Shoulders Display","Arial Narrow",Impact,sans-serif;font-weight:800;font-size:clamp(2.6rem,7vw,4.6rem);line-height:.95;margin:0;letter-spacing:.01em}
+header p{max-width:62ch;color:var(--muted);margin:.6rem 0 0}
+.layout{display:grid;grid-template-columns:minmax(0,1.15fr) minmax(0,1fr);gap:32px;margin-top:28px;align-items:start}
+@media (max-width:860px){.layout{grid-template-columns:1fr}}
+.wheel{position:relative;width:100%;aspect-ratio:1/1;max-width:600px}
+canvas{width:100%;height:100%;display:block}
+.transport{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-top:14px}
+button{font:inherit;color:var(--ink);background:var(--panel);border:2px solid var(--ink);border-radius:999px;padding:.45rem 1rem;cursor:pointer}
+button:hover{background:var(--tint)}
+button.play{background:var(--sun);color:#0E1B3D;border-color:#0E1B3D;font-family:"Big Shoulders Display","Arial Narrow",sans-serif;font-weight:800;font-size:1.4rem;padding:.25rem 1.5rem;min-width:7.5rem}
+button.play:hover{filter:brightness(1.05);background:var(--sun)}
+:focus-visible{outline:3px solid var(--sky);outline-offset:2px}
+.seed{display:flex;align-items:center;gap:6px;color:var(--muted)}
+.seed input{width:7.5rem;font:inherit;color:var(--ink);background:var(--panel);border:1px solid var(--line);border-radius:6px;padding:.35rem .5rem}
+.legend{display:flex;flex-wrap:wrap;gap:14px;margin:14px 0 0;padding:0;list-style:none;color:var(--muted);font-size:.9rem}
+.legend li{display:flex;align-items:center;gap:6px}
+.sw{width:12px;height:12px;border-radius:50%;display:inline-block}
+.sw.thumb{background:var(--flame)} .sw.index{background:var(--sky)}
+.sw.anchor{background:transparent;border:2.5px solid var(--sun)}
+.sw.changed{background:transparent;box-shadow:0 0 0 3px var(--sun) inset;width:16px;height:16px;opacity:.7}
+.log h2,.controls h2{font-family:"Big Shoulders Display","Arial Narrow",sans-serif;font-weight:600;font-size:1.5rem;margin:0 0 .3rem}
+.log{margin-top:22px}
+.log ol{list-style:none;margin:0;padding:0;font-size:.92rem;max-height:14rem;overflow:auto}
+.log li{padding:.2rem 0;border-bottom:1px solid var(--line)}
+.log li.passage{color:var(--flame);font-weight:700}
+.log .empty{color:var(--muted)}
+.controls{background:var(--panel);border-radius:14px;padding:18px 20px 8px}
+fieldset{border:0;border-top:2px solid var(--line);margin:0 0 14px;padding:12px 0 0}
+fieldset:first-of-type{border-top:0;padding-top:0}
+legend{font-family:"Big Shoulders Display","Arial Narrow",sans-serif;font-weight:600;font-size:1.35rem;padding:0;margin-bottom:6px}
+.row{display:grid;grid-template-columns:9.5rem minmax(0,1fr) 6.5rem;gap:10px;align-items:center;margin:6px 0}
+.row label{font-size:.95rem}
+.row output{font-variant-numeric:tabular-nums;color:var(--muted);font-size:.88rem;text-align:right}
+.row select{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:6px;padding:.3rem .4rem;grid-column:2 / 4}
+input[type=range]{width:100%;accent-color:var(--sky)}
+.hint{font-size:.85rem;color:var(--muted);margin:.2rem 0 .4rem}
+.check{display:flex;gap:8px;align-items:center;margin:8px 0}
+@media (max-width:480px){.row{grid-template-columns:7.5rem minmax(0,1fr) 5.2rem}}
+[hidden]{display:none!important}
+.readout{margin:.6rem 0 0;font-size:.98rem;max-width:62ch}
+.readout p{margin:.15rem 0}
+.sw.lt{background:var(--flame)} .sw.rt{background:var(--sky)}
+.sw.tick{width:4px;height:14px;border-radius:2px;background:var(--ink)}
+.pair{display:grid;grid-template-columns:1fr 1fr;gap:8px}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header>
+  <h1>Congotronics line generator</h1>
+  <p>Two amplified likembe parts, each played by two thumbs that take turns on alternate keys. Each thumb loops its own short figure, so the parts carry cross-rhythms inside themselves and against each other, and change slowly over long passages.</p>
+</header>
+
+<div class="layout">
+  <section aria-label="Cycle view and transport">
+    <div class="wheel"><canvas id="cv" role="img" aria-label="One bar of time as a circle. From outside in: lead part, bass part, guide rhythm, bass drum. Each ring shows its own step grid."></canvas></div>
+    <div class="readout" id="readout"></div>
+    <div class="transport">
+      <button class="play" id="play" aria-pressed="false">Play</button>
+      <button id="cue">Cue next passage</button>
+      <button id="newseed">New seed</button>
+      <label class="seed">Seed <input id="seed" type="number" value="1971"></label>
+      <button id="copy">Copy pattern as JSON</button>
+    </div>
+    <ul class="legend">
+      <li><span class="sw lt"></span>Left thumb, lower keys</li>
+      <li><span class="sw rt"></span>Right thumb, upper keys</li>
+      <li><span class="sw tick"></span>A thumb's figure starts again</li>
+      <li><span class="sw changed"></span>Changed this bar</li>
+      <li><span class="sw lt" style="border-radius:2px"></span>Bass drum, innermost ring</li>
+      <li><span class="sw" style="background:var(--ink)"></span>Guide rhythm, second ring</li>
+    </ul>
+    <div class="log">
+      <h2>What changed</h2>
+      <ol id="log"><li class="empty">Press play. Changes are listed here as they happen.</li></ol>
+    </div>
+  </section>
+
+  <section class="controls" aria-label="Settings">
+    <fieldset>
+      <legend>Tuning and pulse</legend>
+      <div class="row"><label for="root">Lowest key</label><select id="root"></select></div>
+      <div class="row"><label for="scale">Tuning</label><select id="scale">
+        <option value="pent">Pentatonic</option><option value="pentm">Pentatonic, minor colour</option>
+        <option value="hexa">Hexatonic</option><option value="hepta">Seven notes</option></select></div>
+      <div class="row"><label for="feel">Pulse</label><select id="feel">
+        <option value="ternary">12 per bar, ternary</option><option value="binary">16 per bar, binary</option></select></div>
+      <div class="row"><label for="bpm">Tempo</label><input id="bpm" type="range" min="80" max="180" step="1"><output for="bpm"></output></div>
+      <div class="row"><label for="swing">Swing</label><input id="swing" type="range" min="0" max="0.6" step="0.05"><output for="swing"></output></div>
+      <div class="row"><label for="human">Humanize</label><input id="human" type="range" min="0" max="20" step="1"><output for="human"></output></div>
+      <div class="row"><label for="timeline">Guide rhythm</label><select id="timeline">
+        <option value="off">Off</option><option value="clave">Clave: E(9,16) from the video, E(7,12) in 12</option><option value="bell">Generic bell timeline</option><option value="beat">Beat</option></select></div>
+      <div class="row"><label for="guideLevel">Guide level</label><input id="guideLevel" type="range" min="0" max="1" step="0.01"><output for="guideLevel"></output></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Bass drum</legend>
+      <div class="row"><label for="kick">Pattern</label><select id="kick">
+        <option value="off">Off</option><option value="four">On every beat</option><option value="pickup">Every beat with a pickup</option>
+        <option value="half">Half time</option><option value="three">Three across the bar</option></select></div>
+      <div class="row"><label for="kickLevel">Level</label><input id="kickLevel" type="range" min="0" max="1" step="0.01"><output for="kickLevel"></output></div>
+      <div class="row"><label for="kickPitch">Pitch</label><input id="kickPitch" type="range" min="38" max="90" step="1"><output for="kickPitch"></output></div>
+      <div class="row"><label for="kickDecay">Length</label><input id="kickDecay" type="range" min="100" max="700" step="10"><output for="kickDecay"></output></div>
+      <div class="row"><label for="kickDrive">Grit</label><input id="kickDrive" type="range" min="0" max="1" step="0.01"><output for="kickDrive"></output></div>
+    </fieldset>
+
+    <fieldset>
+      <legend>Bass part</legend>
+      <div class="row"><label for="bassL">Left thumb loops</label><select id="bassL" class="per"></select></div>
+      <div class="row"><label for="bassR">Right thumb loops</label><select id="bassR" class="per"></select></div>
+      <div class="row"><label for="bassLoops">Loop lengths</label><select id="bassLoops">
+        <option value="fit">Fit the bar</option><option value="one">One thumb may drift</option><option value="both">Both may drift</option></select></div>
+      <div class="row"><label for="bassDensity">Density</label><input id="bassDensity" type="range" min="0.3" max="1" step="0.05"><output for="bassDensity"></output></div>
+      <div class="row"><label for="bassRate">Variation rate</label><input id="bassRate" type="range" min="0" max="1" step="0.025"><output for="bassRate"></output></div>
+      <div class="row"><label for="bassReg">Register</label><input id="bassReg" type="range" min="-1" max="1" step="1"><output for="bassReg"></output></div>
+      <label class="check"><input type="checkbox" id="bassMute"> Mute bass part</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Lead part</legend>
+      <div class="row"><label for="leadL">Left thumb loops</label><select id="leadL" class="per"></select></div>
+      <div class="row"><label for="leadR">Right thumb loops</label><select id="leadR" class="per"></select></div>
+      <div class="row"><label for="leadLoops">Loop lengths</label><select id="leadLoops">
+        <option value="fit">Fit the bar</option><option value="one">One thumb may drift</option><option value="both">Both may drift</option></select></div>
+      <div class="row"><label for="leadDensity">Density</label><input id="leadDensity" type="range" min="0.3" max="1" step="0.05"><output for="leadDensity"></output></div>
+      <div class="row"><label for="leadRate">Variation rate</label><input id="leadRate" type="range" min="0" max="1" step="0.025"><output for="leadRate"></output></div>
+      <div class="row"><label for="leadReg">Register</label><input id="leadReg" type="range" min="-1" max="1" step="1"><output for="leadReg"></output></div>
+      <div class="row"><label for="leadOffset">Start offset</label><input id="leadOffset" type="range" min="0" max="5" step="1"><output for="leadOffset"></output></div>
+      <div class="row"><label for="overlap">When both play</label><select id="overlap">
+        <option value="both">Play both</option><option value="hocket">Lead gives way to the bass</option></select></div>
+      <label class="check"><input type="checkbox" id="leadMute"> Mute lead part</label>
+    </fieldset>
+
+    <fieldset>
+      <legend>Passages</legend>
+      <div class="row"><label for="passage">Passage length</label><input id="passage" type="range" min="8" max="64" step="1"><output for="passage"></output></div>
+      <div class="row"><label for="pchange">Loop length change</label><input id="pchange" type="range" min="0" max="1" step="0.05"><output for="pchange"></output></div>
+      <p class="hint">Chance that a new passage gives the thumbs new loop lengths, which changes the cross-rhythm.</p>
+      <div class="row"><label for="ret">Return to theme</label><input id="ret" type="range" min="0" max="1" step="0.05"><output for="ret"></output></div>
+      <div class="row"><label for="energy">Energy build</label><input id="energy" type="range" min="0" max="1" step="0.05"><output for="energy"></output></div>
+      <p class="hint">Each passage gets denser and the amplifier is pushed harder, then it starts over after five.</p>
+    </fieldset>
+
+    <fieldset>
+      <legend>Sound</legend>
+      <div class="row"><label for="inst">Instrument</label><select id="inst">
+        <option value="likembe">Amplified likembe</option><option value="guitar">Electric guitar</option></select></div>
+      <div class="row"><label for="drive">Amplifier drive</label><input id="drive" type="range" min="0" max="1" step="0.01"><output for="drive"></output></div>
+      <div class="row"><label for="bright">Speaker tone</label><input id="bright" type="range" min="1200" max="8000" step="100"><output for="bright"></output></div>
+      <div class="row"><label for="decay">Damping</label><input id="decay" type="range" min="60" max="1500" step="10"><output for="decay"></output></div>
+      <div class="row"><label for="rev">Room</label><input id="rev" type="range" min="0" max="0.6" step="0.01"><output for="rev"></output></div>
+      <div class="row"><label for="vol">Volume</label><input id="vol" type="range" min="0" max="1" step="0.01"><output for="vol"></output></div>
+    </fieldset>
+  </section>
+</div>
+</div>
+<script>
+(() => {
+const $ = s => document.querySelector(s);
+const NOTE_NAMES = ['C','C♯','D','E♭','E','F','F♯','G','A♭','A','B♭','B'];
+const SCALES = {pent:[0,2,4,7,9], pentm:[0,3,5,7,10], hexa:[0,2,4,5,7,9], hepta:[0,2,4,5,7,9,10]};
+// Register of each part as an anchor note plus a key range in octaves.
+const PARTS = {
+  bass: {name:'bass part', anchor:45, loOct:0,  hiOct:1.6},
+  lead: {name:'lead part', anchor:57, loOct:.4, hiOct:2.0}
+};
+const W = {key:3, rest:2, octave:.6, period:.5};
+
+const P = {root:4, scale:'pent', feel:'binary', bpm:82, swing:0, human:4, timeline:'clave', guideLevel:.7,
+  bassL:4, bassR:3, bassLoops:'one', bassDensity:.85, bassRate:.075, bassReg:0, bassMute:false,
+  leadL:8, leadR:4, leadLoops:'fit', leadDensity:.65, leadRate:.25, leadReg:0, leadOffset:1, overlap:'both', leadMute:false,
+  passage:24, pchange:.4, ret:.3, energy:.5,
+  kick:'four', kickLevel:.8, kickPitch:50, kickDecay:320, kickDrive:.3,
+  inst:'likembe', drive:.45, bright:3400, decay:1500, rev:.14, vol:.7};
+
+const pct = v => `${Math.round(v*100)}%`, reg = v => v==0 ? 'normal' : (v>0 ? '+1 octave' : '−1 octave');
+const FMT = {bpm:v=>`${v} bpm`, swing:v=>P.feel==='binary'?pct(v):'binary only', human:v=>`${v} ms`,
+  bassDensity:pct, bassRate:v=>`${v} per bar`, bassReg:reg, leadDensity:pct, leadRate:v=>`${v} per bar`, leadReg:reg,
+  leadOffset:v=>v==0?'together':`${v} pulse${v>1?'s':''} late`,
+  passage:v=>`${v} bars`, pchange:pct, ret:pct, energy:pct,
+  kickLevel:pct, guideLevel:pct, kickPitch:v=>`${v} Hz`, kickDecay:v=>`${v} ms`, kickDrive:pct,
+  drive:pct, bright:v=>`${v} Hz`, decay:v=>v>=1500?'let ring':`${v} ms`, rev:pct, vol:pct};
+
+// ---------- seeded randomness ----------
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+let rng = mulberry32(1);
+const pick = a => a[Math.floor(rng()*a.length)];
+function pickW(pairs){let tot=0;for(const p of pairs)tot+=p[1];let r=rng()*tot;for(const p of pairs){r-=p[1];if(r<=0)return p[0]}return pairs[0][0]}
+const gcd = (a,b) => b ? gcd(b, a%b) : a, lcm = (a,b) => a*b/gcd(a,b);
+
+// ---------- tuning ----------
+const iv = () => SCALES[P.scale], nkeys = () => iv().length;
+const mod = (a,n) => ((a%n)+n)%n;
+// Rhythm grid (bass drum, guide): 12 per bar = 3 per beat, or 16 per bar = 4 per beat.
+const bar = () => P.feel==='ternary' ? 12 : 16;
+const beat = () => P.feel==='ternary' ? 3 : 4;
+// Likembe parts: 3 pulses per beat in 12, 4 per beat in 16 (same as the rhythm grid).
+const partsBar = () => P.feel==='ternary' ? 12 : 16;
+const partsDiv = () => 1;                              // rhythm-grid steps per parts pulse
+const cycleLen = () => partsBar();   // parts cycle: one bar
+// A loop of n strokes lasts 2n pulses; it fits when 2n divides the bar.
+const fitLoops = () => [2,3,4,5,6,7,8].filter(n => partsBar() % (2*n) === 0);
+const LOOP_DEFAULTS = {ternary:{bassL:3, bassR:4, leadL:6, leadR:3}, binary:{bassL:4, bassR:3, leadL:8, leadR:4}};
+const ALL_LOOPS = [2,3,4,5,6,7,8];
+// Which lengths a thumb may take, given the part's loop setting and the other thumb's length.
+function allowedLoops(id, otherLen){
+  const mode = P[id+'Loops'], f = fitLoops();
+  if(mode==='both') return ALL_LOOPS;
+  if(mode==='one') return f.includes(otherLen) ? ALL_LOOPS : f;
+  return f;
+}                  // parts cycle: always two bars
+function baseFor(anchor, r){ let k=((P.root-anchor)%12+12)%12; if(k>6) k-=12; return anchor+k+r*12; }
+const degToMidi = (d, base) => base + Math.floor(d/nkeys())*12 + iv()[mod(d,nkeys())];
+function keyRange(id){ const n=nkeys(), d=PARTS[id]; return [Math.round(d.loOct*n), Math.round(d.hiOct*n)]; }
+// Likembe keys alternate between the thumbs, so each thumb owns every other scale step.
+function thumbKeys(id, th){ const [lo,hi]=keyRange(id), out=[]; for(let d=lo; d<=hi; d++) if(mod(d,2)===(th==='L'?0:1)) out.push(d); return out; }
+
+// ---------- parts ----------
+const parts = {bass:{}, lead:{}};
+const S = {cycle:1, passage:1, inPassage:0, cueNext:false, band:mulberry32(1)};
+let CY = null;
+const copyThumb = t => ({p:t.p, phase:t.phase, motif:t.motif.map(e=>({...e}))});
+
+function density(id){ return Math.min(1, P[id+'Density'] + P.energy*.08*((S.passage-1)%5)); }
+function genThumb(id, th, p){
+  const keys = thumbKeys(id, th), dens = density(id);
+  // left thumb starts low (the ground of the figure), right thumb starts in the middle of its keys
+  let k = th==='L' ? 0 : Math.floor(keys.length/2);
+  const motif = [];
+  for(let j=0; j<p; j++){
+    if(j) k = Math.max(0, Math.min(keys.length-1, k + pickW([[1,3],[-1,3],[0,1.2],[2,.8],[-2,.8]])));
+    motif.push({key:keys[k], rest: j>0 && rng() > dens});
+  }
+  if(p > 1 && motif.every(e => e.key===motif[0].key)) motif[p-1].key = keys[Math.min(keys.length-1, k+1)];
+  return {p, phase:0, motif};
+}
+function genPart(id){
+  const pt = parts[id]; rng = pt.rng;
+  pt.L = genThumb(id, 'L', P[id+'L']); pt.R = genThumb(id, 'R', P[id+'R']);
+  pt.base = {L:copyThumb(pt.L), R:copyThumb(pt.R)};
+  pt.changed = new Set(['L','R'].flatMap(th => pt[th].motif.map((_,j)=>`${th}:${j}`)));
+}
+
+function mutate(id){
+  const pt = parts[id], th = rng()<.5 ? 'L' : 'R', t = pt[th], keys = thumbKeys(id, th), n = nkeys();
+  const side = th==='L' ? 'left thumb' : 'right thumb';
+  switch(pickW(Object.entries(W))){
+    case 'key': { const j=Math.floor(rng()*t.p), i=keys.indexOf(t.motif[j].key), ni=Math.max(0,Math.min(keys.length-1,i+pick([-1,1])));
+      if(ni===i) return; t.motif[j].key = keys[ni]; pt.changed.add(`${th}:${j}`); return `${side} changed a key`; }
+    case 'rest': { if(t.p<2) return; const j=1+Math.floor(rng()*(t.p-1)); t.motif[j].rest = !t.motif[j].rest; pt.changed.add(`${th}:${j}`);
+      return t.motif[j].rest ? `${side} dropped a stroke` : `${side} added a stroke`; }
+    case 'octave': { const j=Math.floor(rng()*t.p), d=t.motif[j].key, [lo,hi]=keyRange(id);
+      const nd = d+n <= hi+2 ? d+n : (d-n >= lo ? d-n : d); if(nd===d) return; t.motif[j].key = nd; pt.changed.add(`${th}:${j}`);
+      return `${side} jumped ${nd>d?'up':'down'} an octave`; }
+    case 'period': {
+      const other = pt[th==='L'?'R':'L'].p;
+      let np;
+      // move to the nearest allowed length, up or down
+      const f = allowedLoops(id, other).filter(n => n !== t.p && n !== other); if(!f.length) return;
+      const up = f.filter(n => n > t.p), dn = f.filter(n => n < t.p);
+      np = (up.length && (!dn.length || rng() < .5)) ? Math.min(...up) : Math.max(...dn);
+      if(np===t.p) return;
+      while(t.motif.length < np){ const last=t.motif[t.motif.length-1], i=keys.indexOf(last.key); t.motif.push({key:keys[Math.max(0,Math.min(keys.length-1,i+pick([-1,1])))], rest:false}); }
+      t.motif.length = np;
+      t.p = np; t.phase %= np; P[id+th] = np; syncSelects(); pt.changed.add(`${th}:${np-1}`);
+      return `${side} now loops every ${np} strokes`; }
+  }
+}
+function evolvePart(id){
+  const pt = parts[id], rate = P[id+'Rate']; rng = pt.rng; pt.changed = new Set();
+  const who = PARTS[id].name;
+  if(rng() < P.ret*Math.min(1, rate) && JSON.stringify({L:pt.L.motif,R:pt.R.motif}) !== JSON.stringify({L:pt.base.L.motif,R:pt.base.R.motif})){
+    const pl = pt.L.phase, pr = pt.R.phase;
+    pt.L = copyThumb(pt.base.L); pt.R = copyThumb(pt.base.R); pt.L.phase = pl % pt.L.p; pt.R.phase = pr % pt.R.p;
+    P[id+'L'] = pt.L.p; P[id+'R'] = pt.R.p; syncSelects();
+    log(`Bar ${S.cycle}, ${who}: back to the theme`);
+  }
+  const n = Math.floor(rate) + (rng() < rate%1 ? 1 : 0);
+  for(let k=0; k<n; k++){ const msg = mutate(id); if(msg) log(`Bar ${S.cycle}, ${who}: ${msg}`); }
+}
+function newPassage(first){
+  if(!first){
+    S.passage++; rng = S.band;
+    const notes = [];
+    for(const id of ['bass','lead']) if(rng() < P.pchange){
+      let l, r;
+      const f = fitLoops(), mode = P[id+'Loops'];
+      if(mode==='fit'){ l = pick(f); r = pick(f.filter(n => n !== l)); }
+      else if(mode==='one'){                                   // one thumb anchors on a fitting length, the other may wander
+        const a = pick(f), b = pick(ALL_LOOPS.filter(n => n !== a));
+        if(rng() < .5){ l = a; r = b; } else { l = b; r = a; }
+      }
+      else { l = pick(ALL_LOOPS); r = pick(ALL_LOOPS.filter(n => n !== l)); }   // always different, so the thumbs cross
+      P[id+'L'] = l; P[id+'R'] = r;
+      notes.push(`${id==='bass'?'Bass':'Lead'} thumbs now loop ${l} and ${r} strokes`);
+    }
+    syncSelects();
+    log(`Bar ${S.cycle}: new passage ${S.passage}.${notes.length ? ' '+notes.join('. ')+'.' : ''}`, true);
+    updateDrive();
+  }
+  S.inPassage = 0;
+  genPart('bass'); genPart('lead');
+}
+function evolve(){
+  const strokes = cycleLen()/2;
+  for(const id of ['bass','lead']) for(const th of ['L','R']){ const t=parts[id][th]; t.phase = (t.phase + strokes) % t.p; }
+  S.cycle++; S.inPassage++;
+  if(S.cueNext || S.inPassage >= P.passage){ S.cueNext = false; newPassage(false); }
+  else { evolvePart('bass'); evolvePart('lead'); }
+  buildCycle();
+}
+
+// Unroll one cycle. The thumbs alternate pulse by pulse; each loops its own figure at its own length.
+function unroll(id, offset){
+  const Lc = cycleLen(), pt = parts[id], base = baseFor(PARTS[id].anchor, P[id+'Reg']);
+  const ev = Array(Lc).fill(null), restart = Array(Lc).fill(null);
+  for(let i=0; i<Lc; i++){
+    const j = i - offset; if(j < 0) continue;            // the late part enters after the offset
+    const th = j%2===0 ? 'L' : 'R', t = pt[th], k = Math.floor(j/2), idx = (t.phase + k) % t.p, el = t.motif[idx];
+    if(idx===0) restart[i] = th;
+    if(el.rest) continue;
+    ev[i] = {midi:degToMidi(el.key, base), th, accent: idx===0, changed: pt.changed.has(`${th}:${idx}`)};
+  }
+  return {ev, restart};
+}
+function buildCycle(){
+  const b = unroll('bass', 0), l = unroll('lead', P.leadOffset), Lc = cycleLen();
+  if(P.overlap==='hocket') for(let i=0;i<Lc;i++) if(b.ev[i] && l.ev[i]) l.ev[i] = null;
+  const range = id => { const [lo,hi]=keyRange(id), base=baseFor(PARTS[id].anchor,P[id+'Reg']); return [degToMidi(lo-1,base), degToMidi(hi+2,base)]; };
+  CY = {Lc, div:partsDiv(), bar:bar(), bass:b, lead:l, cycle:S.cycle, passage:S.passage, bRange:range('bass'), lRange:range('lead')};
+  updateReadout();
+}
+function describe(id){
+  const a = parts[id].L.p*2, b = parts[id].R.p*2, B = partsBar(), Lc = cycleLen();
+  let rel;
+  if(a===b) rel = 'Both thumbs loop together.';
+  else if(B%a===0 && B%b===0) rel = `That is ${B/a} against ${B/b} in every bar.`;
+  else { const c = lcm(lcm(a,b),Lc)/Lc; rel = c===1 ? 'They line up again at the end of each bar.' : `They drift and line up again every ${c} bars.`; }
+  return `<p><strong>${id==='bass'?'Bass':'Lead'}:</strong> left thumb repeats every ${a} pulses, right thumb every ${b}. ${rel}</p>`;
+}
+function updateReadout(){ $('#readout').innerHTML = describe('bass') + describe('lead'); }
+
+function regen(){
+  const seed = Number($('#seed').value) || 0;
+  parts.bass.rng = mulberry32(seed); parts.lead.rng = mulberry32(seed+7919); S.band = mulberry32(seed+31);
+  S.cycle = 1; S.passage = 1; S.cueNext = false;
+  newPassage(true); buildCycle();
+  if(playing){ stepIdx = 0; snapQ = []; playQ = []; }
+}
+
+// ---------- log ----------
+const logEl = $('#log');
+function log(msg, passage){
+  if(logEl.querySelector('.empty')) logEl.innerHTML = '';
+  const li = document.createElement('li'); li.textContent = msg; if(passage) li.className = 'passage';
+  logEl.prepend(li); while(logEl.children.length > 16) logEl.lastChild.remove();
+}
+
+// ---------- sound ----------
+let ac, master, revSend, voices = [], cache = {}, timer = null, playing = false, stepIdx = 0, nextTime = 0, snapQ = [], playQ = [];
+// Likembe tine: clamped bar, so the first overtone is inharmonic (about 6.3 x), plus the buzz of the rattles and a key click.
+function makeTine(midi){
+  const sr = ac.sampleRate, f = 440*Math.pow(2,(midi-69)/12), len = Math.floor(sr*1.4);
+  const buf = ac.createBuffer(1, len, sr), y = buf.getChannelData(0);
+  const t1 = Math.max(.22, Math.min(.9, .9 - (midi-45)*.016)), t2 = .035, f2 = 6.27*f;
+  let nlp = 0, peak = 0;
+  for(let i=0;i<len;i++){
+    const t = i/sr, e1 = Math.exp(-t/t1);
+    const fund = Math.sin(2*Math.PI*f*t)*e1;
+    const over = f2 < sr*.45 ? .38*Math.sin(2*Math.PI*f2*t)*Math.exp(-t/t2) : 0;
+    const h2 = .14*Math.sin(2*Math.PI*2*f*t+.4)*Math.exp(-t/(t1*.5));
+    nlp += .2*((Math.random()*2-1) - nlp);
+    const buzz = .22*Math.tanh(7*fund)*(.55 + 2.2*nlp)*Math.exp(-t/(t1*.55));
+    const click = i < sr*.004 ? (Math.random()*2-1)*.45*(1 - i/(sr*.004)) : 0;
+    const atk = Math.min(1, i/(sr*.0008));
+    y[i] = atk*(fund + over + h2 + buzz) + click;
+    const m = Math.abs(y[i]); if(m > peak) peak = m;
+  }
+  const g = .9/(peak||1); for(let i=0;i<len;i++) y[i] *= g;
+  return buf;
+}
+// Plucked string for the guitar option, picked near the bridge.
+function makeString(midi){
+  const sr = ac.sampleRate, f = 440*Math.pow(2,(midi-69)/12), len = Math.floor(sr*1.6);
+  const buf = ac.createBuffer(1, len, sr), y = buf.getChannelData(0);
+  const P0 = sr/f, D = P0-.5, Di = Math.floor(D), fr = D-Di, T60 = Math.max(.6, 2.2-(midi-60)*.035), rho = Math.pow(.001, 1/(f*T60));
+  const exLen = Math.round(P0), ex = new Float32Array(exLen); let lp = 0;
+  for(let i=0;i<exLen;i++){ lp += .55*((Math.random()*2-1)-lp); ex[i] = lp; }
+  const pp = Math.max(1, Math.round(exLen*.12)); let peak = 0;
+  for(let i=0;i<len;i++){
+    const x = i<exLen ? ex[i]-(i>=pp?ex[i-pp]:0) : 0, a=i-Di, b=a-1, c=a-2;
+    const z0=a>=0?y[a]:0, z1=b>=0?y[b]:0, z2=c>=0?y[c]:0;
+    y[i] = x + rho*.5*(((1-fr)*z0+fr*z1)+((1-fr)*z1+fr*z2));
+    const m=Math.abs(y[i]); if(m>peak) peak=m;
+  }
+  const g=.9/(peak||1); for(let i=0;i<len;i++) y[i]*=g; return buf;
+}
+const clampM = m => Math.max(28, Math.min(100, Math.round(m)));
+function getBuf(m){ m = clampM(m); const k = P.inst+m; return cache[k] || (cache[k] = P.inst==='likembe' ? makeTine(m) : makeString(m)); }
+function driveCurve(amount){
+  const k = 1 + amount*38, n = 2048, c = new Float32Array(n);
+  for(let i=0;i<n;i++){ const x = i/(n-1)*2-1; c[i] = Math.tanh(k*x)/Math.tanh(k); }
+  return c;
+}
+function makeRoom(){
+  const sr = ac.sampleRate, len = Math.floor(sr*1.2), ir = ac.createBuffer(2, len, sr);
+  for(let ch=0; ch<2; ch++){ const d = ir.getChannelData(ch); let lp = 0;
+    for(let i=0;i<len;i++){ lp += .35*((Math.random()*2-1)-lp); d[i] = lp*Math.pow(1-i/len, 3.4); } }
+  const conv = ac.createConvolver(); conv.buffer = ir; return conv;
+}
+// Each part runs through its own small, overdriven amplifier and speaker.
+function makeVoice(pan){
+  const input = ac.createGain(); input.gain.value = .8;
+  const sh = ac.createWaveShaper(); sh.oversample = '4x';
+  const post = ac.createGain();
+  const hp = ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 180;
+  const pk = ac.createBiquadFilter(); pk.type='peaking'; pk.frequency.value = 1700; pk.Q.value = 1.1; pk.gain.value = 5;
+  const lp = ac.createBiquadFilter(); lp.type='lowpass'; lp.Q.value = .7;
+  const pn = ac.createStereoPanner ? ac.createStereoPanner() : ac.createGain(); if(pn.pan) pn.pan.value = pan;
+  input.connect(sh).connect(post).connect(hp).connect(pk).connect(lp).connect(pn);
+  pn.connect(master); pn.connect(revSend);
+  return {input, sh, post, lp, cur:null};
+}
+function updateDrive(){
+  if(!ac) return;
+  const amt = Math.min(1, P.drive * (1 + P.energy*.18*((S.passage-1)%5)));
+  voices.forEach(v => { v.sh.curve = driveCurve(amt); v.post.gain.setTargetAtTime(1/(1+amt*1.6), ac.currentTime, .05); });
+}
+function updateTone(){ if(ac) voices.forEach(v => v.lp.frequency.setTargetAtTime(P.bright, ac.currentTime, .05)); }
+function initAudio(){
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  master = ac.createGain(); master.gain.value = P.vol*.5; master.connect(ac.destination);
+  const room = makeRoom(); revSend = ac.createGain(); revSend.gain.value = P.rev; revSend.connect(room).connect(master);
+  voices = [makeVoice(-.3), makeVoice(.3)];   // 0 bass, 1 lead
+  makeKickBus(); updateDrive(); updateTone();
+}
+function pluck(v, t, midi, e){
+  const voice = voices[v], c = voice.cur;
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = getBuf(midi);
+  g.gain.setValueAtTime((e.accent ? 1 : .8) * (e.th==='L' ? 1 : .9), t);
+  if(P.decay < 1500) g.gain.setTargetAtTime(0, t+.012, P.decay/3000);
+  src.connect(g).connect(voice.input); src.start(t); const end = t + src.buffer.duration; src.stop(end);
+  if(c){ c.g.gain.setTargetAtTime(0, t, .005); if(c.end > t+.05){ try{ c.src.stop(t+.05); }catch(_){} } }
+  voice.cur = {src, g, end};
+}
+const BELL = {12:[0,2,4,5,7,9,11], 16:[0,3,6,10,12]};
+// Transcribed from the Making of Congotronics International clip (about 3:32–3:46, phase checked against the kick):
+// straight 16ths, 9 strokes. Two doubled strokes (8–9 and 15–0) flip it between on-beat and off-beat pulses.
+const CLAVE = [0,2,4,6,8,9,11,13,15];
+// 12-pulse equivalent: E(7,12), rotated to start with the on-beat run like the clave.
+const CLAVE12 = [0,2,4,6,7,9,11];
+const timelineHits = B => P.timeline==='bell' ? BELL[B] : (P.timeline==='clave' ? (B===16 ? CLAVE : CLAVE12) : []);
+const KICKS = {
+  four:  {12:[0,3,6,9],    16:[0,4,8,12]},
+  pickup:{12:[0,3,6,9,11], 16:[0,4,8,12,14]},
+  half:  {12:[0,6],        16:[0,8]},
+  three: {12:[0,4,8],      16:[0,3,6,8,11,14]}
+};
+let kickBus = null, kickShaper = null;
+function makeKickBus(){
+  kickShaper = ac.createWaveShaper(); kickShaper.oversample = '2x'; kickShaper.curve = driveCurve(P.kickDrive*.6);
+  kickBus = ac.createGain(); kickBus.gain.value = 1;
+  kickShaper.connect(kickBus).connect(master);
+}
+function kickAt(t, i){
+  const p = i % bar(), hits = KICKS[P.kick] && KICKS[P.kick][bar()];
+  if(!hits || !hits.includes(p) || P.kickLevel <= 0) return;
+  const lvl = P.kickLevel * (p===0 ? 1 : .85), len = P.kickDecay/1000;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(P.kickPitch*3.2, t);
+  o.frequency.exponentialRampToValueAtTime(P.kickPitch, t+.045);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lvl, t+.002);
+  g.gain.setTargetAtTime(0, t+.01, len/3.5);
+  o.connect(g).connect(kickShaper); o.start(t); o.stop(t+len+.05);
+  // beater click
+  const n = ac.createBufferSource(), nb = ac.createBuffer(1, Math.floor(ac.sampleRate*.012), ac.sampleRate), d = nb.getChannelData(0);
+  for(let k=0;k<d.length;k++) d[k] = (Math.random()*2-1)*(1-k/d.length);
+  n.buffer = nb; const hp = ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 2500;
+  const ng = ac.createGain(); ng.gain.value = lvl*.25;
+  n.connect(hp).connect(ng).connect(kickBus); n.start(t);
+}
+function guide(t, i){
+  const B = bar(), p = i % B;
+  const hit = P.timeline==='beat' ? p % beat() === 0 : timelineHits(B).includes(p);
+  if(!hit) return;
+  const lvl = P.guideLevel * (p===0 ? .6 : .48);
+  if(lvl <= 0) return;
+  // glass bottle: a bright ringing body tone with a slightly detuned twin (shimmer),
+  // inharmonic upper modes that die quickly, and a sharp glassy tick
+  const f0 = P.timeline==='beat' ? 1500 : 2620;
+  const modes = [[1, 1, .16], [1.006, .55, .14], [2.71, .45, .05], [5.1, .25, .02]];
+  for(const [r, a, d] of modes){
+    if(f0*r > ac.sampleRate*.45) continue;
+    const o = ac.createOscillator(), g = ac.createGain();
+    o.type = 'sine'; o.frequency.value = f0*r;
+    g.gain.setValueAtTime(lvl*a, t); g.gain.exponentialRampToValueAtTime(.0001, t + d*2.5);
+    o.connect(g).connect(master); o.start(t); o.stop(t + d*2.5 + .01);
+  }
+  const n = ac.createBufferSource(), nb = ac.createBuffer(1, Math.floor(ac.sampleRate*.004), ac.sampleRate), d = nb.getChannelData(0);
+  for(let k=0;k<d.length;k++) d[k] = (Math.random()*2-1)*(1-k/d.length);
+  const hp = ac.createBiquadFilter(); hp.type='highpass'; hp.frequency.value = 5000;
+  const ng = ac.createGain(); ng.gain.value = lvl*.9;
+  n.buffer = nb; n.connect(hp).connect(ng).connect(master); n.start(t);
+}
+function tick(){
+  while(nextTime < ac.currentTime + .12){
+    if(stepIdx >= CY.Lc*CY.div){ stepIdx = 0; evolve(); }
+    if(stepIdx === 0) snapQ.push({t:nextTime, cy:CY});
+    const i = stepIdx, dur = 60/P.bpm/beat();
+    if(i % CY.div === 0){
+      const j = i / CY.div;                      // parts pulse
+      let tb = nextTime; if(j%2===1) tb += P.swing*dur*CY.div*.5;
+      const at = () => Math.max(ac.currentTime, tb + (Math.random()-.5)*2*P.human/1000);
+      const be = CY.bass.ev[j], le = CY.lead.ev[j];
+      if(be && !P.bassMute) pluck(0, at(), be.midi, be);
+      if(le && !P.leadMute) pluck(1, at(), le.midi, le);
+    }
+    if(P.timeline!=='off') guide(nextTime, i);
+    if(P.kick!=='off') kickAt(nextTime, i);
+    playQ.push({t:nextTime, i}); nextTime += dur; stepIdx++;
+  }
+}
+async function togglePlay(){
+  if(!ac) initAudio();
+  if(ac.state==='suspended') await ac.resume();
+  playing = !playing;
+  $('#play').textContent = playing ? 'Stop' : 'Play'; $('#play').setAttribute('aria-pressed', String(playing));
+  if(playing){ stepIdx = 0; snapQ = []; playQ = []; nextTime = ac.currentTime + .06; tick(); timer = setInterval(tick, 25); }
+  else { clearInterval(timer); voices.forEach(v => { if(v.cur) v.cur.g.gain.setTargetAtTime(0, ac.currentTime, .03); }); }
+}
+
+// ---------- drawing ----------
+const cv = $('#cv'), g = cv.getContext('2d');
+let C = {}, dpr = 1;
+function readColors(){const cs=getComputedStyle(document.documentElement);for(const k of ['ink','muted','sky','sun','flame','line','tint','panel','bg'])C[k]=cs.getPropertyValue('--'+k).trim()}
+function resize(){dpr=window.devicePixelRatio||1;const r=cv.getBoundingClientRect();cv.width=Math.round(r.width*dpr);cv.height=Math.round(r.height*dpr)}
+new ResizeObserver(resize).observe(cv);
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change', readColors);
+function draw(){
+  const now = ac ? ac.currentTime : 0;
+  let cy = CY, cur = -1;
+  if(playing){
+    while(snapQ.length>1 && snapQ[1].t<=now) snapQ.shift(); if(snapQ.length) cy = snapQ[0].cy;
+    while(playQ.length>1 && playQ[1].t<=now) playQ.shift(); if(playQ.length && playQ[0].t<=now) cur = playQ[0].i;
+  }
+  const Wd=cv.width, H=cv.height, cx=Wd/2, cyy=H/2, half=Math.min(Wd,H)/2, R=half*.86; let r0=R*.24;
+  g.clearRect(0,0,Wd,H);
+  // One revolution = one bar of real time. Angle is time, for every ring.
+  const div = cy.div, B = cy.bar, T = cy.Lc*div, bt = beat();
+  const ang = k => -Math.PI/2 + 2*Math.PI*k/T;               // k in rhythm-grid steps
+  const P2 = (a,r) => [cx+Math.cos(a)*r, cyy+Math.sin(a)*r];
+  const ln = (a,r1,r2) => { const [x1,y1]=P2(a,r1),[x2,y2]=P2(a,r2); g.beginPath(); g.moveTo(x1,y1); g.lineTo(x2,y2); g.stroke(); };
+  const RING = {lead:[R*.66,R], bass:[R*.41,R*.62], guide:[R*.32,R*.38], kick:[R*.24,R*.30]};
+  const band = (r, fill) => { g.beginPath(); g.arc(cx,cyy,r[1],0,Math.PI*2); g.arc(cx,cyy,r[0],0,Math.PI*2,true); g.fillStyle=fill; g.fill('evenodd'); };
+  // one bar; beats alternate shading and are numbered outside the ring
+  for(let b=0; b<T/bt; b++){
+    g.beginPath(); g.moveTo(cx,cyy); g.arc(cx,cyy,R,ang(b*bt),ang((b+1)*bt)); g.closePath();
+    g.fillStyle = b%2 ? C.tint : C.panel; g.fill();
+    const [lx,ly] = P2(ang(b*bt), R+half*.075);
+    g.fillStyle = C.ink; g.font = `600 ${Math.round(half*.08)}px "Big Shoulders Display","Arial Narrow",sans-serif`;
+    g.textAlign='center'; g.textBaseline='middle'; g.fillText(String(b+1), lx, ly);
+  }
+  // gaps between rings
+  for(const r of [[R*.62,R*.66],[R*.38,R*.41],[R*.30,R*.32]]) band(r, C.bg);
+  g.beginPath(); g.arc(cx,cyy,RING.kick[0],0,Math.PI*2); g.fillStyle=C.bg; g.fill();
+  // shared reference: beats and bar lines run through every ring
+  for(let k=0;k<T;k+=bt){ g.strokeStyle = C.ink; g.globalAlpha = k%B===0 ? .55 : .22; g.lineWidth = (k%B===0?1.6:1)*dpr; ln(ang(k), RING.kick[0], R); }
+  g.globalAlpha = 1;
+  // each ring shows its own step grid, so steps that do not line up are visible
+  const grid = (r, n, step) => { g.strokeStyle = C.muted; g.lineWidth = .8*dpr; for(let k=0;k<n;k++) ln(ang(k*step), r[1]-half*.022, r[1]); };
+  grid(RING.lead, cy.Lc, div); grid(RING.bass, cy.Lc, div); grid(RING.guide, T, 1); grid(RING.kick, T, 1);
+  // bass drum ring
+  if(P.kick!=='off'){ const hits = KICKS[P.kick][B]; g.fillStyle = C.flame;
+    for(let k=0;k<T;k++) if(hits.includes(k%B)){ const [x,y]=P2(ang(k), (RING.kick[0]+RING.kick[1])/2), s2=half*(k%B===0?.03:.024); g.fillRect(x-s2/2,y-s2/2,s2,s2); } }
+  // guide ring
+  if(P.timeline!=='off'){ g.fillStyle = C.ink; const hits = P.timeline==='beat' ? null : timelineHits(B);
+    for(let k=0;k<T;k++){ const on = hits ? hits.includes(k%B) : k%bt===0; if(!on) continue;
+      const [x,y]=P2(ang(k), (RING.guide[0]+RING.guide[1])/2); g.beginPath(); g.arc(x,y,half*(k%B===0?.017:.013),0,Math.PI*2); g.fill(); } }
+  const lanes = [{d:cy.lead, band:RING.lead, range:cy.lRange, muted:P.leadMute}, {d:cy.bass, band:RING.bass, range:cy.bRange, muted:P.bassMute}];
+  const nr = half*.02;
+  for(const L of lanes){
+    const [ra,rb]=L.band, [lo,hi]=L.range; g.globalAlpha = L.muted ? .3 : 1;
+    L.d.restart.forEach((th,i) => { if(!th) return; g.strokeStyle = th==='L' ? C.flame : C.sky; g.lineWidth = 3*dpr;
+      if(th==='L') ln(ang(i*div), ra, ra+half*.04); else ln(ang(i*div), rb-half*.06, rb-half*.025); });
+    const pts=[]; L.d.ev.forEach((e,i) => { if(!e) return; const r = ra+half*.04 + (rb-ra-half*.1)*Math.max(0,Math.min(1,(e.midi-lo)/(hi-lo))); const [x,y]=P2(ang(i*div),r); pts.push({x,y,e,i}); });
+    g.strokeStyle = C.muted; g.lineWidth = 1*dpr; const a0 = g.globalAlpha; g.globalAlpha = a0*.35; g.beginPath();
+    pts.forEach((p,k) => k ? g.lineTo(p.x,p.y) : g.moveTo(p.x,p.y)); g.stroke(); g.globalAlpha = a0;
+    for(const p of pts){
+      if(p.e.changed){ g.beginPath(); g.arc(p.x,p.y,nr*2.1,0,Math.PI*2); g.fillStyle=C.sun; g.globalAlpha=a0*.45; g.fill(); g.globalAlpha=a0; }
+      g.beginPath(); g.arc(p.x,p.y,p.i*div===cur?nr*1.7:nr,0,Math.PI*2); g.fillStyle = p.e.th==='L' ? C.flame : C.sky; g.fill();
+    }
+    g.globalAlpha = 1;
+  }
+  r0 = RING.kick[0];
+  if(cur>=0){ g.strokeStyle=C.ink; g.lineWidth=2*dpr; ln(ang(cur), r0, R); }
+  g.fillStyle=C.ink; g.textAlign='center'; g.textBaseline='middle';
+  g.font=`800 ${Math.round(half*.085)}px "Big Shoulders Display","Arial Narrow",sans-serif`; g.fillText(`Passage ${cy.passage}`, cx, cyy-half*.025);
+  g.fillStyle=C.muted; g.font=`400 ${Math.round(half*.038)}px "Atkinson Hyperlegible",sans-serif`; g.fillText(`bar ${cy.cycle}, ${P.bpm} bpm`, cx, cyy+half*.05);
+  requestAnimationFrame(draw);
+}
+
+// ---------- UI ----------
+const rootSel = $('#root');
+NOTE_NAMES.forEach((n,i) => { const o=document.createElement('option'); o.value=i; o.textContent=n; rootSel.appendChild(o); });
+function fillPerOptions(){
+  const f = fitLoops();
+  document.querySelectorAll('.per').forEach(sel => { sel.innerHTML = '';
+    for(let n=2;n<=8;n++){ const o=document.createElement('option'); o.value=n; o.textContent=`every ${n} strokes${f.includes(n)?', fits the bar':''}`; sel.appendChild(o); } });
+}
+fillPerOptions();
+const RANGES = ['guideLevel','kickLevel','kickPitch','kickDecay','kickDrive','bpm','swing','human','bassDensity','bassRate','bassReg','leadDensity','leadRate','leadReg','leadOffset','passage','pchange','ret','energy','drive','bright','decay','rev','vol'];
+const SELECTS = ['bassLoops','leadLoops','kick','scale','feel','timeline','overlap','inst'];
+const PERS = ['bassL','bassR','leadL','leadR'];
+function setOut(k){ const o=document.querySelector(`output[for="${k}"]`); if(o) o.textContent = FMT[k](P[k]); }
+function syncSelects(){ PERS.forEach(k => $('#'+k).value = P[k]); }
+function syncUI(){
+  rootSel.value = P.root; SELECTS.forEach(k => $('#'+k).value = P[k]); syncSelects();
+  RANGES.forEach(k => { $('#'+k).value = P[k]; setOut(k); });
+  ['bassMute','leadMute'].forEach(k => $('#'+k).checked = P[k]);
+}
+const rebuildIfStopped = () => { if(!playing) buildCycle(); };
+RANGES.forEach(k => $('#'+k).addEventListener('input', ev => {
+  P[k] = Number(ev.target.value); setOut(k);
+  if(k==='bassDensity'){ genPart('bass'); rebuildIfStopped(); }
+  if(k==='leadDensity'){ genPart('lead'); rebuildIfStopped(); }
+  if(['bassReg','leadReg','leadOffset'].includes(k)) rebuildIfStopped();
+  if(!ac) return;
+  if(k==='vol') master.gain.setTargetAtTime(P.vol*.5, ac.currentTime, .02);
+  if(k==='rev') revSend.gain.setTargetAtTime(P.rev, ac.currentTime, .02);
+  if(k==='bright') updateTone();
+  if(k==='drive' || k==='energy') updateDrive();
+  if(k==='kickDrive' && kickShaper) kickShaper.curve = driveCurve(P.kickDrive*.6);
+}));
+rootSel.addEventListener('change', e => { P.root = Number(e.target.value); rebuildIfStopped(); });
+SELECTS.forEach(k => $('#'+k).addEventListener('change', e => {
+  P[k] = e.target.value;
+  if(k==='feel'){ Object.assign(P, LOOP_DEFAULTS[P.feel]); fillPerOptions(); syncSelects(); }
+  if(k==='bassLoops' || k==='leadLoops'){ return; }
+  if(k==='scale' || k==='feel'){ setOut('swing'); regen(); }
+  else rebuildIfStopped();
+}));
+PERS.forEach(k => $('#'+k).addEventListener('change', e => {
+  P[k] = Number(e.target.value); const id = k.startsWith('bass') ? 'bass' : 'lead'; rng = parts[id].rng;
+  const th = k.endsWith('L') ? 'L' : 'R'; parts[id][th] = genThumb(id, th, P[k]);
+  parts[id].base[th] = copyThumb(parts[id][th]); updateReadout(); rebuildIfStopped();
+}));
+['bassMute','leadMute'].forEach(k => $('#'+k).addEventListener('change', e => { P[k] = e.target.checked; }));
+$('#seed').addEventListener('change', regen);
+$('#newseed').addEventListener('click', () => { $('#seed').value = Math.floor(Math.random()*99999); regen(); });
+$('#cue').addEventListener('click', () => { if(playing) S.cueNext = true; else { S.cycle++; newPassage(false); buildCycle(); } });
+$('#play').addEventListener('click', togglePlay);
+document.addEventListener('keydown', e => { if(e.code==='Space' && !['INPUT','SELECT','BUTTON','TEXTAREA'].includes(document.activeElement.tagName)){ e.preventDefault(); togglePlay(); } });
+$('#copy').addEventListener('click', async () => {
+  const pack = d => d.ev.map((e,i) => e ? {pulse:i, midi:e.midi, thumb:e.th, accent:e.accent} : null).filter(Boolean);
+  const th = id => ({left:{loop:parts[id].L.p, phase:parts[id].L.phase}, right:{loop:parts[id].R.p, phase:parts[id].R.phase}});
+  const out = {lowestKey:NOTE_NAMES[P.root], tuning:P.scale, pulsesPerBar:CY.Lc, bpm:P.bpm, seed:Number($('#seed').value),
+    kick:{pattern:P.kick, pulses:P.kick==='off'?[]:KICKS[P.kick][bar()]},
+    bass:{thumbs:th('bass'), notes:pack(CY.bass)}, lead:{thumbs:th('lead'), offset:P.leadOffset, notes:pack(CY.lead)}};
+  const txt = JSON.stringify(out,null,2), btn = $('#copy');
+  try { await navigator.clipboard.writeText(txt); btn.textContent='Copied'; } catch { console.log(txt); btn.textContent='Copy failed, see console'; }
+  setTimeout(() => btn.textContent='Copy pattern as JSON', 1600);
+});
+
+readColors(); syncUI(); regen(); resize();
+requestAnimationFrame(draw);
+})();
+</script>
+</body>
+</html>

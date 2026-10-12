@@ -32,7 +32,7 @@ stale() {  # stale BIN DEPS... : true if BIN missing or any dep newer
 }
 
 LIB="$B/libsimcore.a"
-if stale "$LIB" $FW_SRCS "$HOST/sim/sim_core.h" "$HOST/stub" "$ROOT/custom"; then
+if stale "$LIB" $FW_SRCS "$HOST/sim/sim_core.h" "$HOST/sim/host_applets.h" "$HOST/sim/applets" "$HOST/stub" "$ROOT/custom"; then
   echo "building $LIB" >&2
   rm -rf "$B/obj"; mkdir -p "$B/obj"
   for s in $FW_SRCS; do
