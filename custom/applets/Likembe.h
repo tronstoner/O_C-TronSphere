@@ -35,6 +35,7 @@ public:
       custom::LikembeEvent e = core.Pulse();
       if (e.note) {
         pitch = e.pitch_units;
+        last_degree = e.degree; last_accent = e.accent; have_note = true;
         Out(1, pitch);
         Out(0, e.accent ? kGateAccentUnits : kGateNormalUnits);
         gate_ticks = pulse_ticks * kGateLengthPct / 100;
@@ -45,11 +46,11 @@ public:
 
   void View() {
     DrawParam();
-    DrawPulseRow();
+    DrawTines();
+    DrawSteps();
+    DrawSquares();
     DrawThumb(0, kThumbY0);
     DrawThumb(1, kThumbY0 + kThumbPitch);
-    DrawBeatTicks();
-    DrawContour();
     DrawStatus();
   }
 
@@ -97,16 +98,22 @@ private:
   static constexpr int kVarStep = 5;
   // Layout (y = top of element)
   static constexpr int kTextY = 14;
-  static constexpr int kPulseY = 25;     // 6 px tall
-  static constexpr int kPulseH = 6;
-  static constexpr int kTickY = 35;      // beat ticks, 1 px tall; downbeat 2 px wide
-  static constexpr int kThumbY0 = 38;    // two rows, 6 px tall, 8 px pitch
-  static constexpr int kThumbPitch = 8;
+  static constexpr int kBridgeY = 24;    // tine bridge line; tines hang below it
+  static constexpr int kTineMaxLen = 12; // centre tine 25..36
+  static constexpr int kTineMinLen = 6;
+  static constexpr int kTinePitch = 4;
+  static constexpr int kTineCx = 31;
+  static constexpr int kMaxTines = 15;
+  static constexpr int kStepY = 38;      // step row, 6 px tall (38-43)
+  static constexpr int kStepH = 6;
+  static constexpr int kTickY = 46;      // beat ticks (current-step bar at 44-45)
+  static constexpr int kSqY = 48;        // bar-cycle squares, 3 px tall (48-50)
+  static constexpr int kSqMaxW = 50;     // squares end before x 50 (status glyphs at 52/58)
+  static constexpr int kThumbY0 = 52;    // two rows, 5 px tall, 6 px pitch (52-56, 58-62)
+  static constexpr int kThumbPitch = 6;
   static constexpr int kThumbCell = 7;
-  static constexpr int kThumbX = 7;      // after the L/R label; 8 cells end at x 61 (2 px margin)
-  static constexpr int kContourY = 54;   // 10 px tall strip (54-63)
-  static constexpr int kContourH = 10;
-  static constexpr int kCharW = 6;       // font advance
+  static constexpr int kThumbX = 5;      // after the 3x5 L/R label; 5x5 cells, 2 px gap, 8 cells end at x 58
+  static constexpr int kCellS = 5;       // odd size: checkerboard dotted frame closes at the corners
 
   custom::LikembeCore core;
   int cursor = 0;
@@ -115,8 +122,9 @@ private:
   uint32_t pulse_ticks = custom::likembe::kDefaultPulseTicks;   // measured interval
   uint32_t gate_ticks = 0;    // Out A countdown; 0 = low
   bool have_pulse = false;
-
-  int CellW() const { return 64 / core.pulses_per_bar; }   // 4 (16) or 5 (12)
+  uint8_t last_degree = 0;    // display only: last struck degree / accent
+  bool last_accent = false;
+  bool have_note = false;
 
   void DrawParam() {
     static const char* const kNames[] = {"Dens", "Part", "Root", "Oct", "Grid", "Var", "Pass", "Seed"};
@@ -142,21 +150,82 @@ private:
     gfxCursor(vx, kTextY + 8, 33);
   }
 
-  void DrawPulseRow() {
-    const int w = CellW();
-    for (int i = 0; i < core.pulses_per_bar; ++i) {
+  // Kalimba tines: rel degree 0 (part's lowest key) in the centre, odd rel
+  // degrees fan out right, even ones left (column offset ceil(r/2)), length
+  // shrinks 1 px per column outward. Tops hang from a bridge line.
+  int TineCount() const {
+    int n = core.key_hi + custom::likembe::kOctaveHeadroom - core.key_lo + 1;
+    return n > kMaxTines ? kMaxTines : n;
+  }
+  static int TineX(int r) { const int off = (r + 1) / 2; return kTineCx + ((r & 1) ? off : -off) * kTinePitch; }
+  static int TineLen(int r) { const int l = kTineMaxLen - (r + 1) / 2; return l < kTineMinLen ? kTineMinLen : l; }
+
+  void DrawTines() {
+    const int n = TineCount();
+    int xl = kTineCx, xr = kTineCx;
+    for (int r = 0; r < n; ++r) {
+      const int x = TineX(r);
+      if (x < xl) xl = x; if (x > xr) xr = x;
+      gfxLine(x, kBridgeY + 1, x, kBridgeY + TineLen(r));
+    }
+    gfxLine(xl - 2, kBridgeY, xr + 2, kBridgeY);
+    if (!have_note) return;
+    const int r = (int)last_degree - core.key_lo;
+    if (r < 0 || r >= n) return;
+    const int x = TineX(r), tip = kBridgeY + TineLen(r);
+    if (gate_ticks) {
+      gfxRect(x - 1, kBridgeY + 1, 3, TineLen(r));
+      if (last_accent) gfxRect(x - 2, tip - 2, 5, 3);   // accent: wider tip
+    } else {
+      gfxLine(x - 1, tip + 1, x + 1, tip + 1);            // last struck: 3 px foot under the tip
+    }
+  }
+
+  // Step row: this bar's pulses (tall = accent, short = note, dot = rest /
+  // offset); the pulse just played is inverted (running light). Beat ticks below.
+  void DrawSteps() {
+    const int b = core.pulses_per_bar, w = 64 / b;   // 4 (16) or 5 (12)
+    for (int i = 0; i < b; ++i) {
       custom::LikembeEvent e = core.EventAt((uint8_t)i);
       const int x = i * w;
       if (e.note) {
-        const int h = e.accent ? kPulseH : kPulseH - 2;
-        gfxRect(x, kPulseY + kPulseH - h, w - 1, h);
+        const int h = e.accent ? kStepH : kStepH - 3;
+        gfxRect(x, kStepY + kStepH - h, w - 1, h);
       } else {
-        gfxPixel(x + (w - 1) / 2, kPulseY + kPulseH - 1);   // rest / offset: baseline dot
+        gfxPixel(x + (w - 1) / 2, kStepY + kStepH - 1);
       }
     }
-    // current pulse: bar under the cell about to play
-    const int cx = core.pulse_idx * w;
-    gfxRect(cx, kPulseY + kPulseH + 1, w - 1, 2);
+    if (have_pulse) {   // running light: 2 px bar under the pulse just played
+      const int cur = core.pulse_idx == 0 ? b - 1 : core.pulse_idx - 1;
+      gfxRect(cur * w, kStepY + kStepH, w - 1, 2);
+    }
+    const int beat = b / 4;
+    for (int i = 0; i < b; i += beat) gfxLine(i * w, kTickY, i * w + (i == 0 ? 1 : 0), kTickY);
+  }
+
+  // Realignment cycle: one 3x3 square per bar, current filled; thin segments if many.
+  void DrawSquares() {
+    const int n = core.cycle_bars, cur = core.cycle_bar_idx - 1;
+    if (n * 4 <= kSqMaxW) {
+      for (int i = 0; i < n; ++i) {
+        if (i == cur) gfxRect(i * 4, kSqY, 3, 3); else gfxFrame(i * 4, kSqY, 3, 3);
+      }
+    } else {
+      const int w = kSqMaxW / n > 1 ? kSqMaxW / n : 1;
+      for (int i = 0; i < n && i * w < kSqMaxW; ++i) {
+        const int x = i * w;
+        if (i == cur) gfxRect(x, kSqY, w > 1 ? w - 1 : 1, 3);
+        else gfxPixel(x, kSqY + 2);
+      }
+    }
+  }
+
+  // Dotted frame: perimeter pixels on even (dx + dy); odd size -> corners lit, pattern closes.
+  void DottedFrame(int x, int y, int sz) {
+    for (int i = 0; i < sz; i += 2) {
+      gfxPixel(x + i, y); gfxPixel(x + i, y + sz - 1);
+      gfxPixel(x, y + i); gfxPixel(x + sz - 1, y + i);
+    }
   }
 
   void DrawThumb(uint8_t th, int y) {
@@ -166,51 +235,30 @@ private:
     for (uint8_t j = 0; j < t.n; ++j) {
       const int x = kThumbX + j * kThumbCell;
       const bool rest = custom::LikembeCore::Rests(j, t.e[j], dens);
-      if (j == cur) gfxRect(x, y, kThumbCell - 1, 6);
-      else if (rest) gfxFrame(x, y, kThumbCell - 1, 6, true);
-      else gfxFrame(x, y, kThumbCell - 1, 6);
+      if (j == cur) gfxRect(x, y, kCellS, kCellS);
+      else if (rest) DottedFrame(x, y, kCellS);
+      else gfxFrame(x, y, kCellS, kCellS);
     }
-    gfxPrint(0, y - 1, th ? "R" : "L");
-  }
-
-  void DrawContour() {
-    const int w = CellW();
-    const int lo = core.key_lo;
-    const int span = core.key_hi + custom::likembe::kOctaveHeadroom - lo;
-    int px = -1, py = 0;
-    for (int i = 0; i < core.pulses_per_bar; ++i) {
-      custom::LikembeEvent e = core.EventAt((uint8_t)i);
-      if (!e.note) continue;
-      const int x = i * w + (w - 1) / 2;
-      const int y = kContourY + kContourH - 1 - ((int)e.degree - lo) * (kContourH - 1) / span;
-      if (px >= 0) gfxDottedLine(px, py, x, y, 2);
-      gfxRect(x - 1, y - 1, 2, 2);
-      px = x; py = y;
+    // 3x5 pixel label (the 8 px font would collide with the squares row)
+    gfxLine(0, y, 0, y + 4);
+    if (th) {   // R
+      gfxLine(1, y, 1, y); gfxPixel(2, y + 1); gfxPixel(1, y + 2); gfxPixel(2, y + 3); gfxPixel(2, y + 4);
+    } else {    // L
+      gfxLine(1, y + 4, 2, y + 4);
     }
   }
 
-  // Tick at the first pulse of every beat (4 pulses on 16, 3 on 12); downbeat 2 px wide.
-  void DrawBeatTicks() {
-    const int w = CellW();
-    const int beat = core.pulses_per_bar / 4;
-    for (int i = 0; i < core.pulses_per_bar; i += beat)
-      gfxLine(i * w, kTickY, i * w + (i == 0 ? 1 : 0), kTickY);
-  }
-
-  static int Digits(int v) { return v >= 10 ? 2 : 1; }
 
   void DrawStatus() {
-    // Top-right of the contour strip, on a cleared box: bar counter b<i>/<N>
-    // (realignment cycle, capped at 99), left of it blinking '*' = re-roll
-    // pending, '~' = figures currently differ from the passage theme.
-    const int i = core.cycle_bar_idx > 99 ? 99 : core.cycle_bar_idx;
-    const int n = core.cycle_bars > 99 ? 99 : core.cycle_bars;
-    const int chars = 2 + Digits(i) + Digits(n) + 1;   // status glyph slot
-    const int x = 64 - chars * kCharW;
-    gfxClear(x - 1, kContourY, 65 - x, 8);
-    const int tx = x + kCharW;
-    gfxPrint(tx, kContourY, "b"); gfxPrint(i); gfxPrint("/"); gfxPrint(n);
-    if (core.reroll_pending) { if (CursorBlink()) gfxPrint(x, kContourY, "*"); }
-    else if (core.ThemeDiffers()) gfxPrint(x, kContourY, "~");
+    // Right of the squares row, 3 px pixel glyphs (font glyphs would hit the
+    // tick and loop rows): blinking '+' at x 52 = re-roll pending, '~' at
+    // x 58 = figures differ from the passage theme.
+    const int y = kSqY;
+    if (core.reroll_pending && CursorBlink()) {
+      gfxLine(52, y + 1, 54, y + 1); gfxPixel(53, y); gfxPixel(53, y + 2);
+    }
+    if (core.ThemeDiffers()) {
+      gfxPixel(58, y + 1); gfxPixel(59, y); gfxPixel(60, y + 1); gfxPixel(61, y + 2); gfxPixel(62, y + 1);
+    }
   }
 };

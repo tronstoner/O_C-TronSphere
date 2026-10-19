@@ -10,6 +10,7 @@ Reference: `docs/research/Congotronics line generator.html` (pattern logic porte
 3. [x] Glue `custom/applets/Likembe.h` (ID 201, I/O, cursor controls, Pack/Unpack).
 4. [x] Visualization (pulse row + cursor, two thumb loops with current element, contour, status).
 4a. [x] Bar indicator: beat ticks under the pulse row, realignment counter `b<i>/<N>` (core `cycle_bars`/`cycle_bar_idx`, test `cycle_bars_and_index`).
+4b. [x] Display redesign: kalimba tine view (struck tine while gate high, accent tip, last-note foot), bar progress line + beat ticks, bar-cycle squares (segment fallback N > 12), pixel status glyphs; replaces pulse row, cursor, contour and `b<i>/<N>` text. Follow-up: tines shortened to 12 px, step row with running light (inverted current pulse) and beat ticks restored instead of the progress line.
 5. [x] Sim verification (`task host:sim`, `task host:ui --headless` screenshots).
 6. [x] Density 0–100 % (no floor); `Oct` parameter −2…+3 after Root, persisted in bits 40–42.
 7. [ ] Hardware: flash, clock from TR1, tune provisional profiles by ear, `task size` delta.
