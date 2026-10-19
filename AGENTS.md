@@ -92,8 +92,10 @@ ornamentandcrime/
   inputs, atomic vs multi-tick state changes).
 
 ### Git
-- **Only the main agent commits**, only on the user's explicit request, only on the current
-  feature branch. Commit messages state the verification level honestly:
+- **Only the main agent commits**, only on the current feature branch. **Commit savepoints
+  during work** (after each coherent step that builds, at the latest when host tests pass);
+  uncommitted work in progress is a risk, not a courtesy (user decision 2026-10-19). Commit
+  messages state the verification level honestly:
   `savepoint, untested` / `host-verified` / `verified on hardware`.
 - Subagents never run `git commit`, `git push`, `git rebase`, `git config`; they leave
   changes uncommitted and report.
