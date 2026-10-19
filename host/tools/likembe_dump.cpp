@@ -3,7 +3,7 @@
 // likembe_dump -- prints the Likembe core's event stream for parity checks against
 // the browser lab engine (docs/demo/likembe_engine.js). Line format:
 //   bar pulse thumb degree rest accent pitch_units
-// Usage: likembe_dump --seed S --part P --dens D --root R --oct O --grid 16|12
+// Usage: likembe_dump --seed S --part P --dens D --root R --oct O --len 2..32
 //                     --var V --pass IDX --bars N   (missing options = part defaults)
 #include <cstdio>
 #include <cstdlib>
@@ -22,7 +22,7 @@ int main(int argc, char** argv) {
     else if (!strcmp(k, "--dens")) p.density_pct = (uint8_t)v;
     else if (!strcmp(k, "--root")) p.root = (uint8_t)v;
     else if (!strcmp(k, "--oct")) p.octave = (int8_t)v;
-    else if (!strcmp(k, "--grid")) p.grid16 = v == 16 ? 1 : 0;
+    else if (!strcmp(k, "--len")) p.len = (uint8_t)v;
     else if (!strcmp(k, "--var")) p.variation_pct = (uint8_t)v;
     else if (!strcmp(k, "--pass")) p.passage_idx = (uint8_t)v;
     else if (!strcmp(k, "--bars")) bars = v;

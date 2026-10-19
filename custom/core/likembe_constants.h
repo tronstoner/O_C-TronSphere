@@ -28,8 +28,12 @@ constexpr Tuning kTunings[] = {
 constexpr uint8_t kTuningCount = 1;       // enabled tunings (MVP: pentatonic only)
 
 // ---- Time / loops ----
-constexpr uint8_t kGrid16 = 16;
-constexpr uint8_t kGrid12 = 12;
+// Len = pulses per bar (bar line, cycle, loop-fit rule, display step row).
+constexpr uint8_t kLenMin = 2, kLenMax = 32;
+constexpr uint8_t kDefaultLen = 16;
+// Div = clock division: one engine pulse every Div input clocks (counted in the glue).
+constexpr uint8_t kDivMin = 1, kDivMax = 8;
+constexpr uint8_t kDefaultDiv = 1;
 constexpr uint8_t kMinLoop = 2;
 constexpr uint8_t kMaxLoop = 8;           // strokes per thumb figure
 
@@ -47,8 +51,8 @@ struct PartProfile {
   uint8_t density_pct;      // default
   uint8_t variation_pct;    // default (rate per bar x100)
   uint8_t offset;           // start offset in pulses
-  uint8_t loops16[2];       // default L/R loop lengths on the 16 grid
-  uint8_t loops12[2];       // default L/R loop lengths on the 12 grid
+  uint8_t loops16[2];       // default L/R loop lengths at Len 16
+  uint8_t loops12[2];       // default L/R loop lengths at Len 12 (other Len: rolled)
 };
 constexpr PartProfile kParts[kPartCount] = {
   // Bass: spec. variation 0.075 rounds to 8 %.
@@ -94,7 +98,6 @@ constexpr uint8_t kPassageBars[] = {0, 1, 2, 3, 4, 5, 6, 7, 8};   // 0 = Off (ma
 constexpr uint8_t kPassageCount = sizeof(kPassageBars);
 constexpr uint8_t kDefaultPassageIdx = 0;     // Off
 constexpr uint8_t kDefaultRoot = 4;           // E
-constexpr uint8_t kDefaultGrid16 = 1;
 constexpr uint16_t kDefaultSeed = 1;
 // Pulse clock source (Clk). Auto = the hemisphere's Clock(0) (upstream trigger
 // map / internal clock); TRn = HS::frame.clocked[n-1] directly.
@@ -103,7 +106,7 @@ enum ClockSrc : uint8_t { kClockAuto = 0, kClockTr1, kClockTr2, kClockTr3, kCloc
 // ---- Out A velocity gate (glue) ----
 constexpr int kGateAccentUnits = 5 * 1536;    // 5 V on accented notes
 constexpr int kGateNormalUnits = 3 * 1536;    // 3 V on other notes
-constexpr uint32_t kGateLengthPct = 50;       // gate length = % of measured pulse interval
+constexpr uint32_t kGateLengthPct = 50;       // gate length = % of measured engine-pulse interval
 constexpr uint32_t kDefaultPulseTicks = 2083; // 125 ms @ 16.667 kHz, before first interval
 constexpr uint32_t kMaxPulseTicks = 166670;   // 10 s clamp (stopped clock)
 

@@ -18,12 +18,12 @@ Reference: `docs/research/Congotronics line generator.html` (pattern logic porte
 ## API (as implemented, namespace `custom`)
 
 ```cpp
-struct LikembeParams { uint8_t density_pct, part, root; int8_t octave; uint8_t grid16, variation_pct, passage_idx; uint16_t seed; uint8_t clock_src;
+struct LikembeParams { uint8_t density_pct, part, root; int8_t octave; uint8_t len, div, variation_pct, passage_idx; uint16_t seed; uint8_t clock_src;
   static LikembeParams Defaults(uint8_t part); void Clamp(); };
 struct LikembeEvent { bool note; uint8_t degree; int16_t pitch_units; bool accent; uint8_t thumb; };
 struct LikembeCore {
   void Init(const LikembeParams&);        // regenerate from seed
-  void SetParams(const LikembeParams&);   // everything immediate; grid/part/seed -> regen now, bar position kept
+  void SetParams(const LikembeParams&);   // everything immediate; len/part/seed -> regen now, bar position kept
   void SetDensityMod(int8_t pct_delta);   // CV1, effective clamped 0..100
   uint8_t EffectiveDensity() const;
   LikembeEvent Pulse();                   // play one pulse, bar-line work on wrap
@@ -52,8 +52,8 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
   `j > 0 && draw*100 >= density*256`. Changing density/CV1 changes rests immediately and
   consumes no randomness; it is the same decision as the spec's `random > ρ` at generation.
 - `active_part` holds the part the figures belong to (updated on regeneration, i.e. immediately on a part change).
-- Grid/part/seed changes regenerate from the seed immediately (decided 2026-10-19); `pulse_idx` is kept (wrapped to the new grid) and `bar_in_passage` is kept, so the clock grid never jumps; phases restart at 0. Root is immediate.
-- Pulse clock source `Clk` (`clock_src`, bits 44–46): `Auto` = `Clock(0)`, `TR1..TR4` = `HS::frame.clocked[n-1]` (done 2026-10-19).
+- Len/part/seed changes regenerate from the seed immediately (decided 2026-10-19); `pulse_idx` is kept (wrapped to the new Len) and `bar_in_passage` is kept, so the clock grid never jumps; phases restart at 0. Root is immediate.
+- Pulse clock source `Clk` (`clock_src`, bits 51–53 since the Len/Div re-layout): `Auto` = `Clock(0)`, `TR1..TR4` = `HS::frame.clocked[n-1]` (done 2026-10-19).
 - Integer RNG: two xorshift32 streams, part stream = seed + 7919·part, passage stream =
   seed + 31, seeded via multiply/xorshift mix with a non-zero fallback. Probabilities
   against 16-bit draws; weighted picks with integer weights (`kStepWeight`, `kMutWeight`).
@@ -91,7 +91,7 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 - Bass default (85 %): 14 notes / 16 pulses per bar.
 - `--trig 2@3.0` (bar 2): rhythm and pitches change exactly at the start of bar 3 (t = 4.8 s), not before.
 - `--in0 -4608` (−3 V: 85 − 35 = 50 %): 9–10 notes per bar.
-- 2026-10-19, Bass at 0 % (16 grid, loops 4/3): expected L 2 + R 8/3 = 14 notes per 3 bars; observed 5, 5, 4 per bar = 14, and 56 in 12 bars.
+- 2026-10-19, Bass at 0 % (Len 16, loops 4/3): expected L 2 + R 8/3 = 14 notes per 3 bars; observed 5, 5, 4 per bar = 14, and 56 in 12 bars.
 
 ## Out A velocity gate (2026-10-19)
 
@@ -103,6 +103,25 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 - Sim (`--clock 100:4 --seconds 6 --log-outputs`): 35 gates in 40 pulses (rests stay 0 V),
   12 at 7680 (5 V), 23 at 4608 (3 V), no other levels; every gate 75.00 ms (±0.06 ms) except
   the first (62.5 ms = default 125 ms interval before the first measurement).
+
+## Len / Div replace Grid (2026-10-19, user decision)
+
+- `Grid` (16/12) split into `Len` (pulses per bar 2..32, default 16) and `Div` (clock
+  division 1..8, default 1). Core: `params.len` drives `pulses_per_bar`, bar line, cycle,
+  `FitMask` (2n | Len; fewer than two fitting lengths -> all lengths fit), default loops
+  `loops16`/`loops12` at Len 16/12, otherwise `RollLoopLengths()` from the passage stream at
+  regeneration. `params.div` is persisted but used only by the glue: `DivFire()` fires on the
+  first of every Div input clocks with one decrement per clock (no division per tick); gate
+  length measured between engine pulses. `Reset()` re-arms (next clock fires).
+- Pack re-laid out (no presets existed): len−2 at 13–17, div−1 at 18–20, rest shifted, 54 bits.
+- Menu: Dens, Var, Part, Root, Oct, Len, Div, Roll, Seed, Clk. Step row: 4 px cells up to
+  16 pulses, 2 px above; beat ticks every 4 pulses (`kBeatPulses`).
+- Tests: `Make()` takes Len; `loop_policies_and_unequal`, `phase_advance_per_bar` now loop
+  Len 12/16/24/32; `params_live_immediate`, `pack_unpack` (new bit positions, Len/Div clamp),
+  `cycle_bars_and_index` use `len`; new `len_sweep` (Len 2..32 x 4 parts). Parity: `--grid` ->
+  `--len`, 16 combinations incl. Len 2, 7, 12, 16, 24, 32.
+- Verified: host tests, parity, sim screenshots Len 12/16/24/32, sim Div 2 at 120:4 (engine
+  pulse 250 ms, gate 125 ms). Lab Len/Div UI: script syntax-checked only, not run in a browser.
 
 ## Open questions for the user
 

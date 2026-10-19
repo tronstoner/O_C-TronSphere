@@ -51,7 +51,7 @@ th{font-weight:600;color:var(--muted)} td input{width:4.2rem} code{font:12px ui-
     <label>Bass drum <select id="kick"><option value="off">Off</option><option value="four" selected>Four</option><option value="pickup">Pickup</option><option value="half">Half</option><option value="three">Three</option></select></label>
     <label>Clave <select id="clave"><option value="off">Off</option><option value="clave" selected>Clave</option><option value="bell">Bell</option><option value="beat">Beat</option></select></label>
   </div>
-  <div class="muted" style="margin-top:4px">Reference layers follow voice 1's grid.</div>
+  <div class="muted" style="margin-top:4px">Reference layers follow voice 1's pulses (patterns for Len 12 / 16; Beat = every 4 pulses).</div>
 </section>
 
 <div class="voices" id="voices"></div>
@@ -78,7 +78,7 @@ const E = window.LikembeEngine, K = E.C, $ = s => document.querySelector(s);
 const NOTES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
 // One place for display formatting.
 const FMT = {
-  pct: v => `${v}%`, oct: v => v > 0 ? `+${v}` : `${v}`, grid: g => g ? '16' : '12',
+  pct: v => `${v}%`, oct: v => v > 0 ? `+${v}` : `${v}`, div: d => `/${d}`,
   pass: i => K.kPassageBars[i] ? String(K.kPassageBars[i]) : 'Off',
   volt: v => `${Number(v).toFixed(1)} V`,
 };
@@ -90,7 +90,7 @@ const voices = [0, 1].map(v => {
   const core = new E.Core(lab);
   const p = E.defaults(v === 0 ? 0 : 1); p.seed = v === 0 ? 1 : 2;
   core.Init(p);
-  return {core, mute: false, nextTime: 0, snaps: [], view: null, gateEnd: 0, last: null, dumpBars: 32};
+  return {core, mute: false, nextTime: 0, snaps: [], view: null, gateEnd: 0, last: null, dumpBars: 32, divLeft: 0};
 });
 
 function buildVoiceUI(v){
@@ -107,7 +107,8 @@ function buildVoiceUI(v){
       <span>Part</span><select class="w2" data-k="part">${opt(K.kPartNames)}</select>
       <span>Root</span><select class="w2" data-k="root">${opt(NOTES)}</select>
       <span>Oct</span><select class="w2" data-k="octave">${opt([-2,-1,0,1,2,3], x => [x, FMT.oct(x)])}</select>
-      <span>Grid</span><select class="w2" data-k="grid16"><option value="1">16</option><option value="0">12</option></select>
+      <span>Len</span><input class="w2" type="number" min="2" max="32" step="1" data-k="len" title="Pulses per bar (2..32)" style="width:4.5rem">
+      <span>Div</span><input class="w2" type="number" min="1" max="8" step="1" data-k="div" title="One engine pulse every Div 16th-note clocks (1..8)" style="width:4.5rem">
       <span>Roll</span><select class="w2" data-k="passage_idx">${opt(K.kPassageBars, (x, i) => [i, FMT.pass(i)])}</select>
       <span>Seed</span><input class="w2" type="number" min="0" max="65535" step="1" data-k="seed" title="New seed: regenerates immediately (SetParams)" style="width:6rem">
       <span></span><span class="w2 bar" style="gap:4px"><button data-a="reroll" title="TR2 / Seed encoder: new seed + passage, immediately">re-roll (TR2)</button></span>
@@ -126,6 +127,8 @@ function buildVoiceUI(v){
       const p = Object.assign({}, V.core.params);   // core owns the seed after re-rolls (like the glue)
       let val = parseInt(inp.value, 10); if (Number.isNaN(val)) return;
       if (k === 'seed') val = Math.max(0, Math.min(65535, val));
+      if (k === 'len') val = Math.max(K.kLenMin, Math.min(K.kLenMax, val));
+      if (k === 'div') val = Math.max(K.kDivMin, Math.min(K.kDivMax, val));
       p[k] = val;
       V.core.SetParams(p);
       syncVoiceUI(v); refreshIdle(v);
@@ -196,14 +199,14 @@ function render(V, now){
     }
   }
   // steps
-  const B = s.B, w = 64 / B | 0, SY = 38, SH = 6;
+  const B = s.B, w = B <= 16 ? 4 : 2, SY = 38, SH = 6;
   for (let i = 0; i < B; ++i) {
     const e = s.events[i], x = i * w;
     if (e.note) { const h = e.accent ? SH : SH - 3; rect(fb, x, SY + SH - h, w - 1, h); }
     else px(fb, x + ((w - 1) >> 1), SY + SH - 1);
   }
   if (s.havePulse) { const cur = s.pulse_idx === 0 ? B - 1 : s.pulse_idx - 1; rect(fb, cur * w, SY + SH, w - 1, 2); }
-  const beat = B / 4; for (let i = 0; i < B; i += beat) line(fb, i * w, 46, i * w + (i === 0 ? 1 : 0), 46);
+  for (let i = 0; i < B; i += 4) line(fb, i * w, 46, i * w + (i === 0 ? 1 : 0), 46);
   // squares
   const N = s.cycle_bars, cur = s.cycle_bar_idx - 1, SQ = 48, SQW = 50;
   if (N * 4 <= SQW) { for (let i = 0; i < N; ++i) (i === cur ? rect : frame)(fb, i * 4, SQ, 3, 3); }
@@ -295,7 +298,7 @@ function pluck(V, t, midi, vel, len){
 const BELL = {12: [0,2,4,5,7,9,11], 16: [0,3,6,10,12]}, CLAVE = {16: [0,2,4,6,8,9,11,13,15], 12: [0,2,4,6,7,9,11]};
 const KICKS = {four: {12: [0,3,6,9], 16: [0,4,8,12]}, pickup: {12: [0,3,6,9,11], 16: [0,4,8,12,14]}, half: {12: [0,6], 16: [0,8]}, three: {12: [0,4,8], 16: [0,3,6,8,11,14]}};
 function kickAt(t, p, B){
-  const k = $('#kick').value; if (k === 'off' || !KICKS[k][B].includes(p)) return;
+  const k = $('#kick').value; if (k === 'off' || !(KICKS[k][B] || []).includes(p)) return;
   const lvl = .8 * (p === 0 ? 1 : .85), len = .32, pitch = 50;
   const o = ac.createOscillator(), g = ac.createGain();
   o.frequency.setValueAtTime(pitch * 3.2, t); o.frequency.exponentialRampToValueAtTime(pitch, t + .045);
@@ -308,7 +311,7 @@ function kickAt(t, p, B){
 }
 function claveAt(t, p, B){
   const m = $('#clave').value; if (m === 'off') return;
-  const hit = m === 'beat' ? p % (B / 4) === 0 : (m === 'bell' ? BELL : CLAVE)[B].includes(p);
+  const hit = m === 'beat' ? p % 4 === 0 : ((m === 'bell' ? BELL : CLAVE)[B] || []).includes(p);
   if (!hit) return;
   const lvl = .7 * (p === 0 ? .6 : .48), f0 = m === 'beat' ? 1500 : 2620;
   for (const [r, a, d] of [[1, 1, .16], [1.006, .55, .14], [2.71, .45, .05], [5.1, .25, .02]]) {
@@ -323,11 +326,17 @@ function claveAt(t, p, B){
   const ng = ac.createGain(); ng.gain.value = lvl * .9; n.buffer = nb; n.connect(hp).connect(ng).connect(master); n.start(t);
 }
 const bpm = () => Math.max(20, Math.min(300, +$('#bpm').value || 82));
-// Each voice is clocked like TR1 from the internal clock: x4 per beat on the 16 grid, x3 on 12.
+// Each voice is clocked like TR1 from a 16th-note clock (x4 per beat); the engine
+// pulses on the first of every Div clocks (glue DivFire()). Gate = gatePct of the
+// engine-pulse interval (Div clocks).
 function tick(){
   voices.forEach((V, v) => {
     while (V.nextTime < ac.currentTime + .12) {
-      const c = V.core, B = c.pulses_per_bar, dur = 60 / bpm() * 4 / B, t = V.nextTime, p = c.pulse_idx;
+      const c = V.core, B = c.pulses_per_bar, clk = 60 / bpm() / 4, t = V.nextTime;
+      V.nextTime += clk;
+      if (!(V.divLeft === 0 || V.divLeft > c.params.div)) { --V.divLeft; continue; }
+      V.divLeft = c.params.div - 1;
+      const dur = clk * c.params.div, p = c.pulse_idx;
       const ev = c.Pulse();
       let gateEnd = V.pendGateEnd || 0;
       if (ev.note) {
@@ -338,7 +347,6 @@ function tick(){
       V.pendGateEnd = gateEnd;
       if (v === 0) { kickAt(t, p, B); claveAt(t, p, B); }
       V.snaps.push(snapshot(V, t, ev, gateEnd));
-      V.nextTime += dur;
     }
   });
 }
@@ -349,7 +357,7 @@ async function togglePlay(){
   $('#play').textContent = playing ? 'Stop' : 'Play'; $('#play').classList.toggle('on', playing);
   if (playing) {
     const t0 = ac.currentTime + .06;
-    voices.forEach(V => { V.nextTime = t0; V.snaps = []; V.pendGateEnd = 0; V.gateEnd = 0; });
+    voices.forEach(V => { V.nextTime = t0; V.divLeft = 0; V.snaps = []; V.pendGateEnd = 0; V.gateEnd = 0; });
     tick(); timer = setInterval(tick, 25);
   } else {
     clearInterval(timer);
@@ -458,7 +466,7 @@ function exportConstants(){
 // ---------------- dump ----------------
 function dumpVoice(v){
   const V = voices[v], p = V.core.params, labNow = playing && V.core.labPending ? V.core.labPending : V.core.lab;
-  const args = `--seed ${p.seed} --part ${p.part} --dens ${p.density_pct} --root ${p.root} --oct ${p.octave} --grid ${p.grid16 ? 16 : 12} --var ${p.variation_pct} --pass ${p.passage_idx} --bars ${V.dumpBars}`;
+  const args = `--seed ${p.seed} --part ${p.part} --dens ${p.density_pct} --root ${p.root} --oct ${p.octave} --len ${p.len} --var ${p.variation_pct} --pass ${p.passage_idx} --bars ${V.dumpBars}`;
   const fw = JSON.stringify(labNow.parts[p.part]) === JSON.stringify(E.labDefaults().parts[p.part]) && labNow.lStartMiddle === E.labDefaults().lStartMiddle;   // velocities/gate do not affect events
   const o = $('#dumpOut'); o.hidden = false;
   o.textContent = `# voice ${v + 1}: ${args}${fw ? '' : '  (lab values differ from firmware: C++ tool will not match)'}\n` + E.dump(p, V.dumpBars, labNow);

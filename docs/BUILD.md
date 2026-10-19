@@ -79,7 +79,8 @@ custom/
 
 | Env | Flash (of 262144) | RAM (of 65536) |
 |---|---|---|
-| `custom_min` (Hello + Likembe, immediate settings + `Clk` source, 2026-10-19; `task size`) | 98 660 B (37.6 %) | 20 784 B (31.7 %) |
+| `custom_min` (Hello + Likembe, `Len`/`Div` replace `Grid`, 2026-10-19; `task size`) | 98 724 B (37.7 %) | 20 792 B (31.7 %) |
+| `custom_min` (previous: Hello + Likembe, immediate settings + `Clk` source, 2026-10-19; `task size`) | 98 660 B (37.6 %) | 20 784 B (31.7 %) |
 | `custom_min` (Hello only) | 92 828 B (35.4 %) | 20 472 B (31.2 %) |
 | upstream `T32` | 225 340 B (86.0 %) | 38 156 B (58.2 %) |
 

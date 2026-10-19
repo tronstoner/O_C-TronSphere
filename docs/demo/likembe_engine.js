@@ -13,7 +13,7 @@
 const C = {
   kUnitsPerSemitone: 128, kMidiAtZeroUnits: 36, kMaxPitchUnits: 9216,
   kTunings: [[0, 2, 4, 7, 9]],
-  kGrid16: 16, kGrid12: 12, kMinLoop: 2, kMaxLoop: 8,
+  kLenMin: 2, kLenMax: 32, kDefaultLen: 16, kDivMin: 1, kDivMax: 8, kDefaultDiv: 1, kMinLoop: 2, kMaxLoop: 8,
   kPolicyFit: 0, kPolicyOneDrift: 1, kPolicyBothDrift: 2,
   kPartNames: ['Bass', 'Lead', 'MiSol', 'Solo'],
   kParts: [
@@ -27,7 +27,7 @@ const C = {
   kDensityCvRange: 35,
   kPassageBars: [0, 1, 2, 3, 4, 5, 6, 7, 8],
   kClockAuto: 0, kClockSrcCount: 5,
-  kDefaultPassageIdx: 0, kDefaultRoot: 4, kDefaultGrid16: 1, kDefaultSeed: 1,
+  kDefaultPassageIdx: 0, kDefaultRoot: 4, kDefaultSeed: 1,
   kPartStreamOffset: 7919, kPassageStreamOffset: 31, kSeedMix: 0x9E3779B1, kSeedNonZero: 0x6D2B79F5,
 };
 
@@ -68,7 +68,7 @@ const bit = n => (1 << n) >>> 0;
 function defaults(part) {
   if (!(part >= 0 && part < 4)) part = 0;
   return {density_pct: C.kParts[part].density_pct, part, root: C.kDefaultRoot, octave: C.kDefaultOctave,
-    grid16: C.kDefaultGrid16, variation_pct: C.kParts[part].variation_pct, passage_idx: C.kDefaultPassageIdx,
+    len: C.kDefaultLen, div: C.kDefaultDiv, variation_pct: C.kParts[part].variation_pct, passage_idx: C.kDefaultPassageIdx,
     seed: C.kDefaultSeed, clock_src: C.kClockAuto};
 }
 function clampParams(p) {
@@ -77,7 +77,8 @@ function clampParams(p) {
   if (p.part >= 4) p.part = 0;
   if (p.root > 11) p.root = 11;
   p.octave = clampI(p.octave, C.kOctaveMin, C.kOctaveMax);
-  p.grid16 = p.grid16 ? 1 : 0;
+  p.len = clampI(p.len | 0, C.kLenMin, C.kLenMax);
+  p.div = clampI(p.div | 0, C.kDivMin, C.kDivMax);
   if (p.variation_pct > C.kVariationMax) p.variation_pct = C.kVariationMax;
   if (p.passage_idx >= C.kPassageBars.length) p.passage_idx = C.kPassageBars.length - 1;
   p.seed = p.seed & 0xFFFF;
@@ -106,7 +107,7 @@ class Core {
   Init(p) { this.params = clampParams(p); this.Regenerate(false); }
   SetParams(p) {
     const np = clampParams(p);
-    const regen = np.grid16 !== this.params.grid16 || np.part !== this.params.part || np.seed !== this.params.seed;
+    const regen = np.len !== this.params.len || np.part !== this.params.part || np.seed !== this.params.seed;
     this.params = np;
     if (regen) this.Regenerate(true); else this.UpdatePitchBase();
   }
@@ -189,13 +190,13 @@ class Core {
   }
   Keys(th) { const out = []; for (let d = this.key_lo; d <= this.key_hi; ++d) if ((d & 1) === th) out.push(d); return out; }
   IsFit(n) { return this.pulses_per_bar % (2 * n) === 0; }
-  FitMask() { let f = 0; for (let n = C.kMinLoop; n <= C.kMaxLoop; ++n) if (this.IsFit(n)) f |= bit(n); return f >>> 0; }
+  FitMask() { let f = 0; for (let n = C.kMinLoop; n <= C.kMaxLoop; ++n) if (this.IsFit(n)) f |= bit(n); return (f & (f - 1)) ? f >>> 0 : Core.AllMask(); }
   static AllMask() { let a = 0; for (let n = C.kMinLoop; n <= C.kMaxLoop; ++n) a |= bit(n); return a >>> 0; }
   AllowedMask(other) {
     const all = Core.AllMask(), fit = this.FitMask();
     switch (this.Profile().policy) {
       case C.kPolicyBothDrift: return all;
-      case C.kPolicyOneDrift: return this.IsFit(other) ? all : fit;
+      case C.kPolicyOneDrift: return (fit & bit(other)) ? all : fit;
       default: return fit;
     }
   }
@@ -228,14 +229,14 @@ class Core {
   }
   Regenerate(keepPos) {
     const p = this.params, pi = this.pulse_idx, bip = this.bar_in_passage;
-    this.pulses_per_bar = p.grid16 ? C.kGrid16 : C.kGrid12;
+    this.pulses_per_bar = p.len;
     this.active_part = p.part;
     this.pulse_idx = keepPos ? pi % this.pulses_per_bar : 0;
     this.UpdatePitchBase();
     this.rng_part = {s: seedState(u32(p.seed + C.kPartStreamOffset * p.part))};
     this.rng_passage = {s: seedState(u32(p.seed + C.kPassageStreamOffset))};
-    const d = p.grid16 ? this.Profile().loops16 : this.Profile().loops12;
-    this.thumb[0].n = d[0]; this.thumb[1].n = d[1];
+    const d = p.len === 16 ? this.Profile().loops16 : (p.len === 12 ? this.Profile().loops12 : null);
+    if (d) { this.thumb[0].n = d[0]; this.thumb[1].n = d[1]; } else this.RollLoopLengths();
     this.GenPart();
     if (keepPos) this.bar_in_passage = bip;
   }

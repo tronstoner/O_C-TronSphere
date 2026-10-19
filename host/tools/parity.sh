@@ -26,13 +26,20 @@ while read -r args; do
 done <<LIST
 --seed 1 --part 0 --bars 64
 --seed 1 --part 1 --bars 64
---seed 4242 --part 2 --grid 12 --bars 64
+--seed 4242 --part 2 --len 12 --bars 64
 --seed 777 --part 3 --oct 2 --root 9 --bars 64
---seed 31337 --part 3 --grid 12 --var 100 --pass 1 --bars 96
+--seed 31337 --part 3 --len 12 --var 100 --pass 1 --bars 96
 --seed 9 --part 0 --var 100 --pass 1 --dens 40 --bars 96
---seed 65535 --part 1 --var 100 --pass 1 --oct -2 --grid 12 --bars 96
+--seed 65535 --part 1 --var 100 --pass 1 --oct -2 --len 12 --bars 96
 --seed 14572 --part 2 --var 75 --pass 2 --dens 100 --bars 128
---seed 0 --part 0 --dens 0 --var 50 --pass 1 --grid 12 --bars 64
+--seed 0 --part 0 --dens 0 --var 50 --pass 1 --len 12 --bars 64
+--seed 5 --part 1 --len 16 --var 60 --pass 2 --bars 96
+--seed 6 --part 0 --len 24 --var 100 --pass 1 --bars 96
+--seed 7 --part 3 --len 24 --var 50 --pass 3 --bars 96
+--seed 8 --part 2 --len 32 --var 100 --pass 1 --bars 96
+--seed 10 --part 3 --len 32 --var 75 --pass 2 --bars 96
+--seed 11 --part 1 --len 7 --var 100 --pass 1 --bars 64
+--seed 12 --part 0 --len 2 --var 100 --pass 1 --bars 64
 LIST
 [ $fail -eq 0 ] && echo "PARITY OK" || echo "PARITY FAILED"
 exit $fail

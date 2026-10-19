@@ -5,7 +5,8 @@
 // only: I/O, cursor/encoder, display, persistence. See docs/modules/likembe.md.
 //
 // Pulse clock (Clk: Auto = TR1 of this hemisphere via Clock(0), or physical-slot
-// TR1..TR4 via HS::frame.clocked[]), TR2 re-roll immediately,
+// TR1..TR4 via HS::frame.clocked[]) divided by Div (one engine pulse every Div
+// input clocks), TR2 re-roll immediately,
 // CV1 density mod (+-3 V = +-kDensityCvRange %), Out A velocity gate per note, Out B pitch.
 #pragma once
 #include "custom/core/likembe_core.h"
@@ -20,7 +21,7 @@ public:
     pitch = core.EventAt(0).pitch_units;
   }
 
-  void Reset() { core.Reset(); }
+  void Reset() { core.Reset(); div_left = 0; }   // next input clock fires a pulse
 
   void Controller() {
     using namespace custom::likembe;
@@ -29,7 +30,7 @@ public:
     // CV1 -> density offset (integer, constant divisor).
     core.SetDensityMod((int8_t)(In(0) * custom::likembe::kDensityCvRange / HEMISPHERE_3V_CV));
     if (Clock(1)) core.Reroll();
-    if (PulseClock()) {
+    if (PulseClock() && DivFire()) {
       if (have_pulse) pulse_ticks = since_pulse;   // already clamped to kMaxPulseTicks
       have_pulse = true;
       since_pulse = 0;
@@ -65,7 +66,8 @@ public:
       case kCurPart:    p.part = (uint8_t)constrain(p.part + direction, 0, kPartCount - 1); break;
       case kCurRoot:    p.root = (uint8_t)((p.root + 12 + direction) % 12); break;
       case kCurOct:     p.octave = (int8_t)constrain(p.octave + direction, kOctaveMin, kOctaveMax); break;
-      case kCurGrid:    p.grid16 = direction > 0 ? 1 : 0; break;
+      case kCurLen:     p.len = (uint8_t)constrain(p.len + direction, kLenMin, kLenMax); break;
+      case kCurDiv:     p.div = (uint8_t)constrain(p.div + direction, kDivMin, kDivMax); break;
       case kCurVar:     p.variation_pct = (uint8_t)constrain(p.variation_pct + direction * kVarStep, 0, kVariationMax); break;
       case kCurPassage: p.passage_idx = (uint8_t)constrain(p.passage_idx + direction, 0, kPassageCount - 1); break;
       case kCurSeed:    core.RerollNow(); return;   // deliberate edit: new seed immediately
@@ -88,13 +90,13 @@ protected:
     help[HELP_CV2]      = "";
     help[HELP_OUT1]     = "Gate acc";
     help[HELP_OUT2]     = "Pitch";
-    help[HELP_EXTRA1]   = "1 pulse=16th/trip8th";
+    help[HELP_EXTRA1]   = "Len pulses/bar, Div";
     help[HELP_EXTRA2]   = "Seed enc: new pattern";
     //                    "---------------------" <-- Extra text size guide
   }
 
 private:
-  enum Cursor { kCurDensity, kCurVar, kCurPart, kCurRoot, kCurOct, kCurGrid, kCurPassage, kCurSeed, kCurClk };
+  enum Cursor { kCurDensity, kCurVar, kCurPart, kCurRoot, kCurOct, kCurLen, kCurDiv, kCurPassage, kCurSeed, kCurClk };
   static constexpr int kCursorLast = kCurClk;
   static constexpr int kDensityStep = 5;
   static constexpr int kVarStep = 5;
@@ -108,6 +110,7 @@ private:
   static constexpr int kMaxTines = 15;
   static constexpr int kStepY = 38;      // step row, 6 px tall (38-43)
   static constexpr int kStepH = 6;
+  static constexpr int kBeatPulses = 4;
   static constexpr int kTickY = 46;      // beat ticks (current-step bar at 44-45)
   static constexpr int kSqY = 48;        // bar-cycle squares, 3 px tall (48-50)
   static constexpr int kSqMaxW = 50;     // squares end before x 50 (theme glyph at 58)
@@ -124,6 +127,7 @@ private:
   uint32_t pulse_ticks = custom::likembe::kDefaultPulseTicks;   // measured interval
   uint32_t gate_ticks = 0;    // Out A countdown; 0 = low
   bool have_pulse = false;
+  uint8_t div_left = 0;       // input clocks until the next engine pulse; 0 = fire on next
   uint8_t last_degree = 0;    // display only: last struck degree / accent
   bool last_accent = false;
   bool have_note = false;
@@ -136,8 +140,17 @@ private:
     return HS::frame.clocked[src - custom::likembe::kClockTr1];
   }
 
+  // Clock division: fire on the first of every Div input clocks (decrement
+  // only). A smaller Div takes effect at the next input clock.
+  bool DivFire() {
+    bool fire = div_left == 0 || div_left > core.params.div;
+    if (fire) div_left = core.params.div;
+    --div_left;
+    return fire;
+  }
+
   void DrawParam() {
-    static const char* const kNames[] = {"Dens", "Var", "Part", "Root", "Oct", "Grid", "Roll", "Seed", "Clk"};
+    static const char* const kNames[] = {"Dens", "Var", "Part", "Root", "Oct", "Len", "Div", "Roll", "Seed", "Clk"};
     static const char* const kClks[] = {"Auto", "TR1", "TR2", "TR3", "TR4"};
     static const char* const kParts[] = {"Bass", "Lead", "MiSol", "Solo"};
     static const char* const kNotes[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
@@ -150,7 +163,8 @@ private:
       case kCurPart:    gfxPrint(kParts[p.part]); break;
       case kCurRoot:    gfxPrint(kNotes[p.root]); break;
       case kCurOct:     if (p.octave > 0) gfxPrint("+"); gfxPrint(p.octave); break;
-      case kCurGrid:    gfxPrint(p.grid16 ? 16 : 12); break;
+      case kCurLen:     gfxPrint(p.len); break;
+      case kCurDiv:     gfxPrint("/"); gfxPrint(p.div); break;
       case kCurVar:     gfxPrint(p.variation_pct); gfxPrint("%"); break;
       case kCurPassage:
         if (custom::likembe::kPassageBars[p.passage_idx] == 0) gfxPrint("Off");
@@ -203,9 +217,11 @@ private:
   }
 
   // Step row: this bar's pulses (tall = accent, short = note, dot = rest /
-  // offset); the pulse just played is inverted (running light). Beat ticks below.
+  // offset); the pulse just played is marked by a bar below (running light).
+  // Cells 4 px up to 16 pulses, 2 px above (32 x 2 = 64). Beat ticks every
+  // kBeatPulses pulses.
   void DrawSteps() {
-    const int b = core.pulses_per_bar, w = 64 / b;   // 4 (16) or 5 (12)
+    const int b = core.pulses_per_bar, w = b <= 16 ? 4 : 2;
     for (int i = 0; i < b; ++i) {
       custom::LikembeEvent e = core.EventAt((uint8_t)i);
       const int x = i * w;
@@ -220,8 +236,7 @@ private:
       const int cur = core.pulse_idx == 0 ? b - 1 : core.pulse_idx - 1;
       gfxRect(cur * w, kStepY + kStepH, w - 1, 2);
     }
-    const int beat = b / 4;
-    for (int i = 0; i < b; i += beat) gfxLine(i * w, kTickY, i * w + (i == 0 ? 1 : 0), kTickY);
+    for (int i = 0; i < b; i += kBeatPulses) gfxLine(i * w, kTickY, i * w + (i == 0 ? 1 : 0), kTickY);
   }
 
   // Realignment cycle: one 3x3 square per bar, current filled; thin segments if many.

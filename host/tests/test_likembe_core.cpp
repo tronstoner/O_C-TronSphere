@@ -32,9 +32,10 @@ static void Dump(const LikembeCore& c, const char* tag) {
               c.params.seed, c.thumb[0].n, c.thumb[0].phase, c.thumb[1].n, c.thumb[1].phase, row[0], row[1]);
 }
 
-static LikembeCore Make(uint8_t part, uint16_t seed, uint8_t grid16 = 1) {
+static const uint8_t kTestLens[] = {12, 16, 24, 32};
+static LikembeCore Make(uint8_t part, uint16_t seed, uint8_t len = lk::kDefaultLen) {
   LikembeParams p = LikembeParams::Defaults(part);
-  p.seed = seed; p.grid16 = grid16;
+  p.seed = seed; p.len = len;
   LikembeCore c; c.Init(p);
   return c;
 }
@@ -67,7 +68,7 @@ TEST(determinism) {
 TEST(loop_policies_and_unequal) {
   bool ok = true;
   for (uint8_t part = 0; part < lk::kPartCount; ++part)
-    for (uint8_t g = 0; g < 2; ++g) {
+    for (uint8_t g : kTestLens) {
       LikembeCore c = Make(part, 77, g);
       c.params.variation_pct = 100; c.params.passage_idx = 1;
       for (int bar = 0; bar < 300; ++bar) {
@@ -145,7 +146,7 @@ TEST(alternation_and_offset) {
 
 TEST(phase_advance_per_bar) {
   bool ok = true;
-  for (uint8_t g = 0; g < 2; ++g) {
+  for (uint8_t g : kTestLens) {
     LikembeCore c = Make(lk::kPartBass, 5, g);
     c.params.variation_pct = 0;
     for (int bar = 0; bar < 20; ++bar) {
@@ -261,14 +262,14 @@ TEST(params_live_immediate) {
   RunBar(c); RunBar(c);
   for (int i = 0; i < 14; ++i) c.Pulse();
   CHECK(c.bar_in_passage == 2 && c.pulse_idx == 14);
-  // grid change: regenerated now, pulse position wrapped to the new grid, passage counter kept
-  LikembeParams p = c.params; p.grid16 = 0;
+  // Len change: regenerated now, pulse position wrapped to the new Len, passage counter kept
+  LikembeParams p = c.params; p.len = 12;
   c.SetParams(p);
   CHECK(c.pulses_per_bar == 12 && c.pulse_idx == 14 % 12 && c.bar_in_passage == 2);
   CHECK(c.thumb[0].n == lk::kParts[0].loops12[0] && c.thumb[1].n == lk::kParts[0].loops12[1]);
   CHECK(c.thumb[0].phase == 0 && c.thumb[1].phase == 0 && c.cycle_bar_idx == 1);
-  // grid back to 16 at pulse 2: position kept
-  p = c.params; p.grid16 = 1; c.SetParams(p);
+  // Len back to 16 at pulse 2: position kept
+  p = c.params; p.len = 16; c.SetParams(p);
   CHECK(c.pulses_per_bar == 16 && c.pulse_idx == 2);
   while (c.pulse_idx != 0) c.Pulse();
   CHECK(c.bar_in_passage == 3);
@@ -328,21 +329,22 @@ TEST(pitch_mapping_and_range) {
 
 TEST(pack_unpack) {
   bool ok = true;
-  LikembeParams p; p.density_pct = 77; p.part = 3; p.root = 11; p.octave = -2; p.grid16 = 0;
+  LikembeParams p; p.density_pct = 77; p.part = 3; p.root = 11; p.octave = -2; p.len = 27; p.div = 5;
   p.variation_pct = 100; p.passage_idx = 8; p.seed = 0xBEEF; p.clock_src = lk::kClockTr4;
   LikembeCore a; a.Init(p);
   uint64_t d = a.Pack();
-  CHECK(d >> 47 == 0 && ((d >> 44) & 0x7) == lk::kClockTr4);
+  CHECK(d >> 54 == 0 && ((d >> 51) & 0x7) == lk::kClockTr4 && ((d >> 13) & 0x1F) == 25 && ((d >> 18) & 0x7) == 4);
   LikembeCore b; b.Unpack(d);
   CHECK(std::memcmp(&a.params, &b.params, sizeof p) == 0);
   CHECK(LikembeCore::SameFigures(a.thumb, b.thumb));
   // garbage
   LikembeParams g = LikembeCore::UnpackParams(~0ull);
-  CHECK(g.density_pct == 100 && g.octave == lk::kOctaveMax && g.root == 11 && g.variation_pct == 100 && g.passage_idx == lk::kPassageCount - 1 && g.clock_src == lk::kClockAuto);
+  CHECK(g.density_pct == 100 && g.octave == lk::kOctaveMax && g.root == 11 && g.variation_pct == 100 && g.passage_idx == lk::kPassageCount - 1 && g.clock_src == lk::kClockAuto
+        && g.len == lk::kLenMax && g.div == lk::kDivMax);
   g = LikembeCore::UnpackParams(0);
-  CHECK(g.density_pct == 0 && g.octave == lk::kOctaveMin && g.clock_src == lk::kClockAuto);
+  CHECK(g.density_pct == 0 && g.octave == lk::kOctaveMin && g.clock_src == lk::kClockAuto && g.len == lk::kLenMin && g.div == lk::kDivMin);
   for (uint8_t s = 0; s < 8; ++s)
-    CHECK(LikembeCore::UnpackParams((uint64_t)s << 44).clock_src == (s < lk::kClockSrcCount ? s : lk::kClockAuto));
+    CHECK(LikembeCore::UnpackParams((uint64_t)s << 51).clock_src == (s < lk::kClockSrcCount ? s : lk::kClockAuto));
   for (int o = lk::kOctaveMin; o <= lk::kOctaveMax; ++o) {
     p.octave = (int8_t)o; a.Init(p);
     CHECK(LikembeCore::UnpackParams(a.Pack()).octave == o);
@@ -368,7 +370,7 @@ TEST(cycle_bars_and_index) {
   LikembeCore b = Make(lk::kPartBass, 1);
   CHECK(b.thumb[0].n == 4 && b.thumb[1].n == 3);
   CHECK(b.cycle_bars == 3 && b.cycle_bar_idx == 1);
-  LikembeCore b12 = Make(lk::kPartBass, 1, 0);
+  LikembeCore b12 = Make(lk::kPartBass, 1, 12);
   CHECK(b12.cycle_bars == 2);
   LikembeCore l = Make(lk::kPartLead, 1);
   CHECK(l.cycle_bars == 1 && l.cycle_bar_idx == 1);
@@ -382,7 +384,7 @@ TEST(cycle_bars_and_index) {
   RunBar(b); CHECK(b.cycle_bar_idx == 2);
   b.Reset(); CHECK(b.cycle_bar_idx == 1);
   RunBar(b); CHECK(b.cycle_bar_idx == 2);
-  LikembeParams p = b.params; p.grid16 = 0; b.SetParams(p);
+  LikembeParams p = b.params; p.len = 12; b.SetParams(p);
   CHECK(b.cycle_bar_idx == 1 && b.cycle_bars == 2);
   RunBar(b); CHECK(b.cycle_bar_idx == 2);
   b.Reroll(); CHECK(b.cycle_bar_idx == 1);
@@ -403,6 +405,32 @@ TEST(cycle_bars_and_index) {
   return ok;
 }
 
+// Free Len: every Len 2..32 x part runs, stays in range, cycle_bars matches,
+// fit-policy lengths divide the bar when at least two lengths fit.
+TEST(len_sweep) {
+  bool ok = true;
+  for (uint8_t len = lk::kLenMin; len <= lk::kLenMax; ++len)
+    for (uint8_t part = 0; part < lk::kPartCount; ++part) {
+      LikembeCore c = Make(part, (uint16_t)(100 + len), len);
+      c.params.variation_pct = 100; c.params.passage_idx = 1;
+      CHECK(c.pulses_per_bar == len);
+      if (len == 16) CHECK(c.thumb[0].n == lk::kParts[part].loops16[0] && c.thumb[1].n == lk::kParts[part].loops16[1]);
+      for (int bar = 0; bar < 40; ++bar) {
+        RunBar(c);
+        bool good = c.pulse_idx == 0 && c.cycle_bars == LikembeCore::CycleBars(c.thumb[0].n, c.thumb[1].n, len)
+                 && c.cycle_bar_idx >= 1 && c.cycle_bar_idx <= c.cycle_bars;
+        for (int th = 0; th < 2; ++th)
+          good = good && c.thumb[th].n >= lk::kMinLoop && c.thumb[th].n <= lk::kMaxLoop && c.thumb[th].phase < c.thumb[th].n;
+        uint16_t fit = 0;
+        for (uint8_t n = lk::kMinLoop; n <= lk::kMaxLoop; ++n) if (len % (2 * n) == 0) fit |= (uint16_t)(1u << n);
+        if (lk::kParts[part].policy == lk::kPolicyFit && (fit & (fit - 1)))
+          good = good && (fit & (1u << c.thumb[0].n)) && (fit & (1u << c.thumb[1].n));
+        if (!good) { CHECK(good); std::printf("  len %d part %d bar %d\n", len, part, bar); Dump(c, "len"); break; }
+      }
+    }
+  return ok;
+}
+
 int main() {
   RUN(determinism);
   RUN(loop_policies_and_unequal);
@@ -419,6 +447,7 @@ int main() {
   RUN(pitch_mapping_and_range);
   RUN(pack_unpack);
   RUN(cycle_bars_and_index);
+  RUN(len_sweep);
   { LikembeCore c = Make(lk::kPartLead, 1); Dump(c, "example lead"); }
   return g_fail ? 1 : 0;
 }

@@ -3,7 +3,7 @@
 // likembe_core.h -- pure pattern logic for the Likembe applet (one part per
 // instance). Port of the pattern engine in docs/research/Congotronics line
 // generator.html (JS reference) / "Likembe pattern engine technical concept".
-// Integer only, no allocation, no STL. Advanced by Pulse() (one call per grid
+// Integer only, no allocation, no STL. Advanced by Pulse() (one call per engine
 // pulse); variation and passage changes happen once per bar line inside the
 // Pulse() that ends the bar; setting changes and re-rolls apply immediately. See docs/modules/likembe.md.
 #pragma once
@@ -17,7 +17,8 @@ struct LikembeParams {
   uint8_t part;           // likembe::Part
   uint8_t root;           // pitch class 0..11 (lowest key)
   int8_t octave;          // octave offset kOctaveMin..kOctaveMax
-  uint8_t grid16;         // 1 = 16 pulses per bar, 0 = 12
+  uint8_t len;            // pulses per bar kLenMin..kLenMax
+  uint8_t div;            // clock division kDivMin..kDivMax (glue only)
   uint8_t variation_pct;  // 0..100 = 0..1 mutations per bar
   uint8_t passage_idx;    // index into kPassageBars (0 = Off)
   uint16_t seed;
@@ -31,7 +32,8 @@ struct LikembeParams {
     p.part = part;
     p.root = kDefaultRoot;
     p.octave = kDefaultOctave;
-    p.grid16 = kDefaultGrid16;
+    p.len = kDefaultLen;
+    p.div = kDefaultDiv;
     p.variation_pct = kParts[part].variation_pct;
     p.passage_idx = kDefaultPassageIdx;
     p.seed = kDefaultSeed;
@@ -46,7 +48,10 @@ struct LikembeParams {
     if (root > 11) root = 11;
     if (octave < kOctaveMin) octave = kOctaveMin;
     if (octave > kOctaveMax) octave = kOctaveMax;
-    grid16 = grid16 ? 1 : 0;
+    if (len < kLenMin) len = kLenMin;
+    if (len > kLenMax) len = kLenMax;
+    if (div < kDivMin) div = kDivMin;
+    if (div > kDivMax) div = kDivMax;
     if (variation_pct > kVariationMax) variation_pct = kVariationMax;
     if (passage_idx >= kPassageCount) passage_idx = kPassageCount - 1;
     if (clock_src >= kClockSrcCount) clock_src = kClockAuto;
@@ -89,7 +94,7 @@ struct LikembeCore {
   // cycle_bars = lcm(2*nL, 2*nR, pulses_per_bar) / pulses_per_bar bars (the
   // part's start offset shifts both thumbs equally, so it does not change N).
   // cycle_bar_idx = bar playing now, 1..cycle_bars. Restarts at 1 on Reset(),
-  // whenever figures are (re)generated (GenPart: Init, grid/part/seed change,
+  // whenever figures are (re)generated (GenPart: Init, Len/part/seed change,
   // re-roll, new passage -- phases restart at 0) and when a mutation changes a
   // loop length; otherwise advances at every bar line and wraps N -> 1.
   uint8_t cycle_bars = 1;
@@ -103,12 +108,13 @@ struct LikembeCore {
   }
 
   // Live changes. Density, variation, passage length: immediate. Root, octave: pitch
-  // mapping immediate (figures are degrees). Grid, part, seed: full
+  // mapping immediate (figures are degrees). Len, part, seed: full
   // regeneration from the seed, immediately; the bar position (pulse_idx,
-  // wrapped to the new grid) and bar_in_passage are kept, phases restart at 0.
+  // wrapped to the new Len) and bar_in_passage are kept, phases restart at 0.
+  // Div is not used by the core (the glue counts input clocks).
   void SetParams(const LikembeParams& p) {
     LikembeParams np = p; np.Clamp();
-    bool regen = np.grid16 != params.grid16 || np.part != params.part || np.seed != params.seed;
+    bool regen = np.len != params.len || np.part != params.part || np.seed != params.seed;
     params = np;
     if (regen) Regenerate(true); else UpdatePitchBase();
   }
@@ -122,7 +128,7 @@ struct LikembeCore {
     return (uint8_t)d;
   }
 
-  // Advance one grid pulse and return its event.
+  // Advance one engine pulse and return its event.
   LikembeEvent Pulse() {
     LikembeEvent ev = EventAt(pulse_idx);
     if (++pulse_idx >= pulses_per_bar) { pulse_idx = 0; BarLine(); }
@@ -191,20 +197,22 @@ struct LikembeCore {
   bool ThemeDiffers() const { return !SameFigures(thumb, theme); }
 
   // Persistence (settings only). Bit layout, LSB first:
-  //  0..6 density_pct (7)  7..8 part (2)  9..12 root (4)  13 grid16 (1)
-  // 14..20 variation_pct (7) 21..24 passage_idx (4) 25..40 seed (16)
-  // 41..43 octave - kOctaveMin (3; 6, 7 clamp to +3)  44..46 clock_src (3; 5..7 -> Auto)
+  //  0..6 density_pct (7)  7..8 part (2)  9..12 root (4)
+  // 13..17 len - kLenMin (5; 31 -> Len 33 clamps to 32)  18..20 div - kDivMin (3)
+  // 21..27 variation_pct (7)  28..31 passage_idx (4)  32..47 seed (16)
+  // 48..50 octave - kOctaveMin (3; 6, 7 clamp to +3)  51..53 clock_src (3; 5..7 -> Auto)
   uint64_t Pack() const {
     uint64_t d = 0;
     d |= (uint64_t)(params.density_pct & 0x7F);
     d |= (uint64_t)(params.part & 0x3) << 7;
     d |= (uint64_t)(params.root & 0xF) << 9;
-    d |= (uint64_t)(params.grid16 & 0x1) << 13;
-    d |= (uint64_t)(params.variation_pct & 0x7F) << 14;
-    d |= (uint64_t)(params.passage_idx & 0xF) << 21;
-    d |= (uint64_t)params.seed << 25;
-    d |= (uint64_t)((params.octave - likembe::kOctaveMin) & 0x7) << 41;
-    d |= (uint64_t)(params.clock_src & 0x7) << 44;
+    d |= (uint64_t)((params.len - likembe::kLenMin) & 0x1F) << 13;
+    d |= (uint64_t)((params.div - likembe::kDivMin) & 0x7) << 18;
+    d |= (uint64_t)(params.variation_pct & 0x7F) << 21;
+    d |= (uint64_t)(params.passage_idx & 0xF) << 28;
+    d |= (uint64_t)params.seed << 32;
+    d |= (uint64_t)((params.octave - likembe::kOctaveMin) & 0x7) << 48;
+    d |= (uint64_t)(params.clock_src & 0x7) << 51;
     return d;
   }
   static LikembeParams UnpackParams(uint64_t d) {
@@ -212,12 +220,13 @@ struct LikembeCore {
     p.density_pct = (uint8_t)(d & 0x7F);
     p.part = (uint8_t)((d >> 7) & 0x3);
     p.root = (uint8_t)((d >> 9) & 0xF);
-    p.grid16 = (uint8_t)((d >> 13) & 0x1);
-    p.variation_pct = (uint8_t)((d >> 14) & 0x7F);
-    p.passage_idx = (uint8_t)((d >> 21) & 0xF);
-    p.seed = (uint16_t)((d >> 25) & 0xFFFF);
-    p.octave = (int8_t)(((d >> 41) & 0x7) + likembe::kOctaveMin);
-    p.clock_src = (uint8_t)((d >> 44) & 0x7);
+    p.len = (uint8_t)(((d >> 13) & 0x1F) + likembe::kLenMin);
+    p.div = (uint8_t)(((d >> 18) & 0x7) + likembe::kDivMin);
+    p.variation_pct = (uint8_t)((d >> 21) & 0x7F);
+    p.passage_idx = (uint8_t)((d >> 28) & 0xF);
+    p.seed = (uint16_t)((d >> 32) & 0xFFFF);
+    p.octave = (int8_t)(((d >> 48) & 0x7) + likembe::kOctaveMin);
+    p.clock_src = (uint8_t)((d >> 51) & 0x7);
     p.Clamp();
     return p;
   }
@@ -290,14 +299,10 @@ struct LikembeCore {
 
   // Allowed lengths for a thumb given the other's length (JS allowedLoops), as a bit mask.
   uint16_t AllowedMask(uint8_t other) const {
-    uint16_t all = 0, fit = 0;
-    for (uint8_t n = likembe::kMinLoop; n <= likembe::kMaxLoop; ++n) {
-      all |= (uint16_t)(1u << n);
-      if (IsFit(n)) fit |= (uint16_t)(1u << n);
-    }
+    uint16_t all = AllMask(), fit = FitMask();
     switch (Profile().policy) {
       case likembe::kPolicyBothDrift: return all;
-      case likembe::kPolicyOneDrift: return IsFit(other) ? all : fit;
+      case likembe::kPolicyOneDrift: return (fit & (1u << other)) ? all : fit;
       default: return fit;
     }
   }
@@ -306,10 +311,12 @@ struct LikembeCore {
     for (uint8_t n = 0; n < 16; ++n) if (mask & (1u << n)) list[c++] = n;
     return c ? list[Below(s, c)] : likembe::kMinLoop;
   }
+  // Lengths that fit the bar (2n divides Len). Fewer than two fit (e.g. odd
+  // Len) -> every length counts as fit, so the policies always have a choice.
   uint16_t FitMask() const {
     uint16_t f = 0;
     for (uint8_t n = likembe::kMinLoop; n <= likembe::kMaxLoop; ++n) if (IsFit(n)) f |= (uint16_t)(1u << n);
-    return f;
+    return (f & (f - 1)) ? f : AllMask();
   }
   static uint16_t AllMask() {
     uint16_t a = 0;
@@ -341,19 +348,21 @@ struct LikembeCore {
     SyncCycle(true);
   }
 
-  // Everything from the seed (Init: keep_pos false; grid/part/seed change:
-  // keep_pos true keeps pulse_idx (wrapped to the new grid) and bar_in_passage).
+  // Everything from the seed (Init: keep_pos false; Len/part/seed change:
+  // keep_pos true keeps pulse_idx (wrapped to the new Len) and bar_in_passage).
   void Regenerate(bool keep_pos) {
     using namespace likembe;
     uint8_t pi = pulse_idx, bip = bar_in_passage;
-    pulses_per_bar = params.grid16 ? kGrid16 : kGrid12;
+    pulses_per_bar = params.len;
     active_part = params.part;
     pulse_idx = keep_pos ? (uint8_t)(pi % pulses_per_bar) : 0;
     UpdatePitchBase();
     rng_part = SeedState((uint32_t)params.seed + kPartStreamOffset * params.part);
     rng_passage = SeedState((uint32_t)params.seed + kPassageStreamOffset);
-    const uint8_t* d = params.grid16 ? Profile().loops16 : Profile().loops12;
-    thumb[0].n = d[0]; thumb[1].n = d[1];
+    // Default loop lengths at Len 16 / 12; any other Len rolls them under the
+    // part policy from the lengths allowed for that Len (passage stream).
+    const uint8_t* d = params.len == 16 ? Profile().loops16 : (params.len == 12 ? Profile().loops12 : nullptr);
+    if (d) { thumb[0].n = d[0]; thumb[1].n = d[1]; } else RollLoopLengths();
     GenPart();
     if (keep_pos) bar_in_passage = bip;
   }
