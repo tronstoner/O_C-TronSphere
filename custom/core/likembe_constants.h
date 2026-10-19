@@ -96,6 +96,9 @@ constexpr uint8_t kDefaultPassageIdx = 0;     // Off
 constexpr uint8_t kDefaultRoot = 4;           // E
 constexpr uint8_t kDefaultGrid16 = 1;
 constexpr uint16_t kDefaultSeed = 1;
+// Pulse clock source (Clk). Auto = the hemisphere's Clock(0) (upstream trigger
+// map / internal clock); TRn = HS::frame.clocked[n-1] directly.
+enum ClockSrc : uint8_t { kClockAuto = 0, kClockTr1, kClockTr2, kClockTr3, kClockTr4, kClockSrcCount };
 
 // ---- Out A velocity gate (glue) ----
 constexpr int kGateAccentUnits = 5 * 1536;    // 5 V on accented notes

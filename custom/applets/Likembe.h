@@ -4,7 +4,8 @@
 // instance (id 201). Logic: custom/core/likembe_core.h. This header is glue
 // only: I/O, cursor/encoder, display, persistence. See docs/modules/likembe.md.
 //
-// TR1 pulse clock (one trigger = one grid pulse), TR2 re-roll at next bar line,
+// Pulse clock (Clk: Auto = TR1 of this hemisphere via Clock(0), or physical-slot
+// TR1..TR4 via HS::frame.clocked[]), TR2 re-roll immediately,
 // CV1 density mod (+-3 V = +-kDensityCvRange %), Out A velocity gate per note, Out B pitch.
 #pragma once
 #include "custom/core/likembe_core.h"
@@ -28,7 +29,7 @@ public:
     // CV1 -> density offset (integer, constant divisor).
     core.SetDensityMod((int8_t)(In(0) * custom::likembe::kDensityCvRange / HEMISPHERE_3V_CV));
     if (Clock(1)) core.Reroll();
-    if (Clock(0)) {
+    if (PulseClock()) {
       if (have_pulse) pulse_ticks = since_pulse;   // already clamped to kMaxPulseTicks
       have_pulse = true;
       since_pulse = 0;
@@ -60,6 +61,7 @@ public:
     custom::LikembeParams p = core.params;   // core owns the seed after re-rolls
     switch (cursor) {
       case kCurDensity: p.density_pct = (uint8_t)constrain(p.density_pct + direction * kDensityStep, kDensityMin, kDensityMax); break;
+      case kCurClk:     p.clock_src = (uint8_t)constrain(p.clock_src + direction, 0, kClockSrcCount - 1); break;
       case kCurPart:    p.part = (uint8_t)constrain(p.part + direction, 0, kPartCount - 1); break;
       case kCurRoot:    p.root = (uint8_t)((p.root + 12 + direction) % 12); break;
       case kCurOct:     p.octave = (int8_t)constrain(p.octave + direction, kOctaveMin, kOctaveMax); break;
@@ -92,8 +94,8 @@ protected:
   }
 
 private:
-  enum Cursor { kCurDensity, kCurPart, kCurRoot, kCurOct, kCurGrid, kCurVar, kCurPassage, kCurSeed };
-  static constexpr int kCursorLast = kCurSeed;
+  enum Cursor { kCurDensity, kCurVar, kCurPart, kCurRoot, kCurOct, kCurGrid, kCurPassage, kCurSeed, kCurClk };
+  static constexpr int kCursorLast = kCurClk;
   static constexpr int kDensityStep = 5;
   static constexpr int kVarStep = 5;
   // Layout (y = top of element)
@@ -108,7 +110,7 @@ private:
   static constexpr int kStepH = 6;
   static constexpr int kTickY = 46;      // beat ticks (current-step bar at 44-45)
   static constexpr int kSqY = 48;        // bar-cycle squares, 3 px tall (48-50)
-  static constexpr int kSqMaxW = 50;     // squares end before x 50 (status glyphs at 52/58)
+  static constexpr int kSqMaxW = 50;     // squares end before x 50 (theme glyph at 58)
   static constexpr int kThumbY0 = 52;    // two rows, 5 px tall, 6 px pitch (52-56, 58-62)
   static constexpr int kThumbPitch = 6;
   static constexpr int kThumbCell = 7;
@@ -118,7 +120,7 @@ private:
   custom::LikembeCore core;
   int cursor = 0;
   int pitch = 0;
-  uint32_t since_pulse = 0;   // ticks since last Clock(0), clamped
+  uint32_t since_pulse = 0;   // ticks since last pulse clock, clamped
   uint32_t pulse_ticks = custom::likembe::kDefaultPulseTicks;   // measured interval
   uint32_t gate_ticks = 0;    // Out A countdown; 0 = low
   bool have_pulse = false;
@@ -126,8 +128,17 @@ private:
   bool last_accent = false;
   bool have_note = false;
 
+  // Pulse clock per Clk: Auto = Clock(0) (this hemisphere's first trigger via
+  // the upstream trigger map / internal clock); TRn = frame.clocked[n-1].
+  bool PulseClock() {
+    const uint8_t src = core.params.clock_src;
+    if (src == custom::likembe::kClockAuto) return Clock(0);
+    return HS::frame.clocked[src - custom::likembe::kClockTr1];
+  }
+
   void DrawParam() {
-    static const char* const kNames[] = {"Dens", "Part", "Root", "Oct", "Grid", "Var", "Pass", "Seed"};
+    static const char* const kNames[] = {"Dens", "Var", "Part", "Root", "Oct", "Grid", "Roll", "Seed", "Clk"};
+    static const char* const kClks[] = {"Auto", "TR1", "TR2", "TR3", "TR4"};
     static const char* const kParts[] = {"Bass", "Lead", "MiSol", "Solo"};
     static const char* const kNotes[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
     const custom::LikembeParams& p = core.params;
@@ -146,6 +157,7 @@ private:
         else { gfxPrint(custom::likembe::kPassageBars[p.passage_idx]); gfxPrint(":"); gfxPrint(core.bar_in_passage); }
         break;
       case kCurSeed:    gfxPrint((int)p.seed); break;
+      case kCurClk:     gfxPrint(kClks[p.clock_src]); break;
     }
     gfxCursor(vx, kTextY + 8, 33);
   }
@@ -260,12 +272,8 @@ private:
 
   void DrawStatus() {
     // Right of the squares row, 3 px pixel glyphs (font glyphs would hit the
-    // tick and loop rows): blinking '+' at x 52 = re-roll pending, '~' at
-    // x 58 = figures differ from the passage theme.
+    // tick and loop rows): '~' at x 58 = figures differ from the passage theme.
     const int y = kSqY;
-    if (core.reroll_pending && CursorBlink()) {
-      gfxLine(52, y + 1, 54, y + 1); gfxPixel(53, y); gfxPixel(53, y + 2);
-    }
     if (core.ThemeDiffers()) {
       gfxPixel(58, y + 1); gfxPixel(59, y); gfxPixel(60, y + 1); gfxPixel(61, y + 2); gfxPixel(62, y + 1);
     }

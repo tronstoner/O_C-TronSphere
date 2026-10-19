@@ -39,6 +39,8 @@ Any other topic: check `docs/PROJECT.md` § Document Map before assuming a doc d
   host test → hardware. No parallel module development, no speculative modules.
 - **Inside a module: few, well-understood controls.** One main knob/CV per module is the
   default. Every extra parameter needs a reason the user agreed to.
+- **A setting change is audible immediately.** No waiting for the next bar/step unless the
+  module doc states otherwise (decided 2026-10-19).
 - Clock: use the upstream ClockSetup/trigger map as is. No clock rework (decided 2026-10-19).
   Applets derive their own divisions; `HS::clock_m` may be read directly.
 

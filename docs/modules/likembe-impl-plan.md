@@ -18,24 +18,24 @@ Reference: `docs/research/Congotronics line generator.html` (pattern logic porte
 ## API (as implemented, namespace `custom`)
 
 ```cpp
-struct LikembeParams { uint8_t density_pct, part, root; int8_t octave; uint8_t grid16, variation_pct, passage_idx; uint16_t seed;
+struct LikembeParams { uint8_t density_pct, part, root; int8_t octave; uint8_t grid16, variation_pct, passage_idx; uint16_t seed; uint8_t clock_src;
   static LikembeParams Defaults(uint8_t part); void Clamp(); };
 struct LikembeEvent { bool note; uint8_t degree; int16_t pitch_units; bool accent; uint8_t thumb; };
 struct LikembeCore {
   void Init(const LikembeParams&);        // regenerate from seed
-  void SetParams(const LikembeParams&);   // density/variation/passage/root/octave immediate; grid/part/seed -> regen at bar line
+  void SetParams(const LikembeParams&);   // everything immediate; grid/part/seed -> regen now, bar position kept
   void SetDensityMod(int8_t pct_delta);   // CV1, effective clamped 0..100
   uint8_t EffectiveDensity() const;
   LikembeEvent Pulse();                   // play one pulse, bar-line work on wrap
   LikembeEvent EventAt(uint8_t i) const;  // event of pulse i of the current bar (display)
   uint8_t CurrentElement(uint8_t th) const;
-  void Reroll();                          // pending, at next bar line
-  void RerollNow();                       // immediate
+  void Reroll();                          // immediate (TR2)
+  void RerollNow();                       // same as Reroll()
   void Reset();                           // position + phases to 0, figures kept
   bool ThemeDiffers() const;
   uint64_t Pack() const; void Unpack(uint64_t); static LikembeParams UnpackParams(uint64_t);
-  // public state: params, pulses_per_bar, pulse_idx, bar_in_passage, reroll_pending,
-  // regen_pending, thumb[2], theme[2], base_midi, key_lo, key_hi
+  // public state: params, pulses_per_bar, pulse_idx, bar_in_passage,
+  // thumb[2], theme[2], base_midi, key_lo, key_hi
 };
 ```
 
@@ -46,13 +46,14 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 ## Decisions taken in the core
 
 - **Re-roll** = new seed (drawn from the passage stream) + new passage with *forced* new loop
-  lengths under the policy + regenerated figures (new theme), applied at the next bar line
-  (`reroll_pending`). `RerollNow()` is the immediate variant.
+  lengths under the policy + regenerated figures (new theme), applied immediately (decided
+  2026-10-19; pulse position kept, phases restart at 0). `RerollNow()` is the same call.
 - **Density is live**: each element stores its rest draw (0..255); rest iff
   `j > 0 && draw*100 >= density*256`. Changing density/CV1 changes rests immediately and
   consumes no randomness; it is the same decision as the spec's `random > ρ` at generation.
-- `active_part` holds the part the figures belong to; a pending part change does not move offset/range/pitch before the bar line.
-- Grid/part/seed changes regenerate from the seed at the next bar line; root is immediate.
+- `active_part` holds the part the figures belong to (updated on regeneration, i.e. immediately on a part change).
+- Grid/part/seed changes regenerate from the seed immediately (decided 2026-10-19); `pulse_idx` is kept (wrapped to the new grid) and `bar_in_passage` is kept, so the clock grid never jumps; phases restart at 0. Root is immediate.
+- Pulse clock source `Clk` (`clock_src`, bits 44–46): `Auto` = `Clock(0)`, `TR1..TR4` = `HS::frame.clocked[n-1]` (done 2026-10-19).
 - Integer RNG: two xorshift32 streams, part stream = seed + 7919·part, passage stream =
   seed + 31, seeded via multiply/xorshift mix with a non-zero fallback. Probabilities
   against 16-bit draws; weighted picks with integer weights (`kStepWeight`, `kMutWeight`).
@@ -105,7 +106,8 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 
 ## Open questions for the user
 
-1. Re-roll at next bar line (implemented default) vs immediate (`RerollNow()` exists)?
+1. ~~Re-roll at next bar line vs immediate?~~ Decided 2026-10-19: immediate (all setting changes immediate).
+2. ~~Clock input choosable?~~ Done 2026-10-19: `Clk` = Auto / TR1..TR4.
 3. CV2: variation-rate modulation, re-roll gate, or root transpose? (currently unassigned)
 7. Part change: reload the part's default Density/Var, or keep the user's values (current)?
 8. Seed edit: random new seed per turn (current) vs stepping the seed number?

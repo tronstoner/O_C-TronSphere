@@ -42,6 +42,8 @@ explicitly parked.
   clock/advance, Out A the primary signal. Deviations are documented in the controls table.
 - **Formatting through shared helpers** (one helper for BPM, ratios, voltages, percent);
   no ad-hoc number printing per applet.
+- **A setting change is audible immediately.** No waiting for the next bar/step unless the
+  module doc states otherwise (decided 2026-10-19).
 - **No hidden modes.** Long-press or combo gestures only where the shell already uses them.
 - `View()` only draws state; it never mutates it.
 

@@ -23,8 +23,8 @@ this module.
 
 | Jack | Function |
 |---|---|
-| TR1 | Pulse clock: one pulse = one grid pulse (16th on the 16 grid, triplet 8th on the 12 grid) |
-| TR2 | Re-roll: new seed + new passage, applied at the next bar line |
+| TR1 | Pulse clock (with `Clk` = `Auto`): one pulse = one grid pulse (16th on the 16 grid, triplet 8th on the 12 grid). `Clk` = `TR1..TR4` takes the pulse from that trigger channel instead |
+| TR2 | Re-roll: new seed + new passage, applied **immediately** (pulse position kept, phases restart at 0, passage counter restarts) |
 | CV1 | Density modulation, bipolar: ±3 V (`HEMISPHERE_3V_CV`) = ±35 percent points (`kDensityCvRange`), added to Density, effective value clamped to 0..100 %; read every tick (one multiply/divide by constant) |
 | CV2 | Unassigned (open question) |
 | Out A | Velocity gate per note: 5 V on accented notes (`kGateAccentUnits`, element 0 of a thumb), 3 V otherwise (`kGateNormalUnits`); length = 50 % (`kGateLengthPct`) of the measured TR1 interval (last interval, clamped to 10 s `kMaxPulseTicks`; 125 ms `kDefaultPulseTicks` until two pulses are seen); a new note re-asserts the level immediately; rests start no gate |
@@ -34,21 +34,37 @@ Physical numbering shifts by two in the right-hand slot (TR3/TR4, CV3/CV4, Out C
 trigger map in Clock Setup can route any physical trigger input, or the internal clock
 (x3 for the 12 grid, x4 for the 16 grid per beat), to TR1.
 
+**Clock source (`Clk`).** `Auto` = `Clock(0)`: this hemisphere's own first trigger, i.e.
+whatever the upstream trigger map / internal clock delivers to TR1 (left) or TR3 (right).
+`TR1..TR4` = `HS::frame.clocked[n-1]` read directly, so the right-hand instance can follow
+TR1 without patching. Finding (`firmware/software/src/HemisphereApplet.cpp`,
+`IOFrame::Load()`): `frame.clocked[0..3]` is computed once per tick for all four trigger
+channels; when the internal clock runs and the channel's multiplier is non-zero it holds
+`clock_m.Tock(ch)` (internal-clock pulses at that channel's multiplier), otherwise
+`trigmap[ch].Clock()` (the trigger map's mapped physical input), plus manual boops, after
+the per-channel input skip. So `TRn` follows exactly what channel n of the trigger map /
+Clock Setup produces -- including the internal clock -- not necessarily the raw jack n.
+The re-roll input stays `Clock(1)`.
+
 ## Controls
 
 Encoder turns move the cursor through the parameters (one line, `Name value`); push
-toggles edit mode; in edit mode the encoder changes the value. Order = user priority.
+toggles edit mode; in edit mode the encoder changes the value. Order = user priority:
+Density and Var are the performance parameters and come first. Every setting change is
+audible immediately (project rule, `docs/DESIGN_PRINCIPLES.md`); only the passage end (Roll)
+happens at the bar line, by definition.
 
 | Cursor | Parameter | Range | Default | Step | Takes effect |
 |---|---|---|---|---|---|
 | 1 `Dens` | Density | 0–100 % | per part (`kParts[].density_pct`, Bass 85) | 5 % | immediately; display shows the effective value incl. CV1 |
-| 2 `Part` | Part | Bass, Lead, MiSol, Solo | Bass | 1 | next bar line (regenerates from seed with the part's default loops); Density/Var keep the user's values (no per-part default reload) |
-| 3 `Root` | Root (lowest key) | C..B, wraps | E (`kDefaultRoot`) | 1 semitone | immediately |
-| 4 `Oct` | Octave offset (shifts all pitches by 12·Oct semitones) | −2…+3, shown `Oct +1` / `Oct 0` / `Oct -2` | 0 | 1 octave | immediately |
-| 5 `Grid` | Pulses per bar | 16 / 12 (right = 16, left = 12) | 16 | — | next bar line (regenerates) |
-| 6 `Var` | Variation rate | 0–100 % (= 0–1 mutations per bar) | per part (Bass 8) | 5 % | immediately |
-| 7 `Pass` | Passage length | Off, 1–8 bars; shows `len:bar` | Off | — | immediately |
-| 8 `Seed` | Seed | 0–65535 (decimal) | 1 | any turn in edit mode = new random seed | **immediately** (`RerollNow`); TR2 re-roll waits for the bar line |
+| 2 `Var` | Variation rate | 0–100 % (= 0–1 mutations per bar) | per part (Bass 8) | 5 % | immediately |
+| 3 `Part` | Part | Bass, Lead, MiSol, Solo | Bass | 1 | immediately (regenerates from seed with the part's default loops; bar position and passage counter kept, phases restart at 0); Density/Var keep the user's values (no per-part default reload) |
+| 4 `Root` | Root (lowest key) | C..B, wraps | E (`kDefaultRoot`) | 1 semitone | immediately |
+| 5 `Oct` | Octave offset (shifts all pitches by 12·Oct semitones) | −2…+3, shown `Oct +1` / `Oct 0` / `Oct -2` | 0 | 1 octave | immediately |
+| 6 `Grid` | Pulses per bar | 16 / 12 (right = 16, left = 12) | 16 | — | immediately (regenerates; pulse position wrapped to the new grid, passage counter kept, phases restart at 0) |
+| 7 `Roll` | Re-roll every N bars (passage length) | Off, 1–8 bars; shows `Off` or `len:bar` | Off | — | setting immediately; the roll itself happens at the bar line that ends the passage |
+| 8 `Seed` | Seed | 0–65535 (decimal) | 1 | any turn in edit mode = new random seed | immediately (`RerollNow`, same as TR2) |
+| 9 `Clk` | Pulse clock source | `Auto`, `TR1`, `TR2`, `TR3`, `TR4` | `Auto` (`kClockAuto`) | 1 | immediately (next tick) |
 
 Element 0 of each thumb never rests, so at 0 % density each thumb plays only its first element, once per pass through its loop.
 
@@ -74,8 +90,10 @@ via octave mutation) at the worst root stays at 70 semitones above C2 = 5.83 V.
 ## Clock model
 
 No tempo inside the core. Each `Pulse()` call plays one grid pulse; the core counts pulses
-modulo 12/16 and does the bar-line work (phase advance by pulses/2 mod n, then pending
-regeneration, pending re-roll, passage end, or variation) inside the call that ends the bar.
+modulo 12/16 and does the bar-line work (phase advance by pulses/2 mod n, then passage end
+or variation) inside the call that ends the bar. Grid/Part/Seed changes and re-rolls (TR2,
+Seed encoder) regenerate immediately in `SetParams()` / `Reroll()`; the bar position is kept
+(`pulse_idx` wrapped to the new grid), so the clock grid never jumps.
 `Reset()` zeroes the bar position and phases and keeps the figures.
 
 ## Pitch mapping
@@ -85,7 +103,7 @@ regeneration, pending re-roll, passage end, or variation) inside the call that e
 MIDI per spec: `base + 12*(floor(d/n) + Oct) + offset[d mod n]`, base = root pitch class nearest
 the anchor (−5..+6 semitones).
 
-## Persistence (`Pack()`/`Unpack()`, settings only, 44 of 64 bits)
+## Persistence (`Pack()`/`Unpack()`, settings only, 47 of 64 bits)
 
 | Bits | Field | Validation |
 |---|---|---|
@@ -97,6 +115,7 @@ the anchor (−5..+6 semitones).
 | 21–24 | passage_idx | clamp ≤ 8 |
 | 25–40 | seed | — |
 | 41–43 | octave + 2 (0..5 = −2..+3) | 6, 7 clamp to +3 |
+| 44–46 | clock_src (0 Auto, 1–4 TR1–TR4) | 5–7 → Auto |
 
 Unpack regenerates everything from the seed (evolving state is not persisted).
 
@@ -111,13 +130,13 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
 `host/tools/likembe_lab_parity.mjs`, line format `bar pulse thumb degree rest accent pitch_units`).
 
 - **Two voices** = two applet instances on one tempo (each clocked x4 per beat on the 16 grid,
-  x3 on 12). Per voice the module parameters (Dens, Part, Root, Oct, Grid, Var, Pass, Seed)
-  with the module's ranges and steps; "re-roll (TR2, next bar)" = TR2, "re-roll now" = Seed
-  encoder; typing a seed regenerates at the next bar line. Mute per voice.
+  x3 on 12). Per voice the module parameters (Dens, Part, Root, Oct, Grid, Var, Roll, Seed; `Clk`
+  is not in the lab -- all lab voices share one tempo) with the module's ranges and steps;
+  "re-roll (TR2)" = TR2 / Seed encoder, immediate; typing a seed regenerates immediately. Mute per voice.
 - **Display:** a 4x canvas of the module display below the parameter line (tines, step row,
   running light, beat ticks, bar-cycle squares, status glyphs, L/R loop rows), drawn by a port of
   `Likembe::View`, plus a text line per thumb (`X` accent, `x` note, `.` rest, `[ ]` next element,
-  degrees, phase, cycle, seed, passage, pending flags).
+  degrees, phase, cycle, seed, roll counter, `~theme`, `+lab` = lab constants pending).
 - **Sound:** tine synth, amp and room from the Congotronics demo. Velocity = Out A gate level
   / 5 V (accent 5 V = 1.0, normal 3 V = 0.6); note sustain = gate length.
 - **Reference only (not in the firmware):** bass drum patterns and clave/bell/beat from the
@@ -163,7 +182,7 @@ default in `labDefaults()` (`likembe_engine.js`) to the same values, `task host:
 | 44–45 | Running light | 2 px bar (cell width) under the pulse just played |
 | 46 | Beat ticks | 1 px tick at the first pulse of each beat (every 4 pulses on 16, every 3 on 12); downbeat 2 px wide |
 | 48–50 | Bar-cycle squares | one 3×3 square per bar of the realignment cycle N (4 px pitch, from x 0), current bar filled, others hollow; if N × 4 > 50: 1 px-wide markers (width 50/N) with the current one filled. Never reaches x 50 |
-| 48–50, x 52 / 58 | Status | 3 px pixel glyphs: blinking `+` (x 52) = re-roll pending (next bar line), `~` (x 58) = figures differ from the passage theme |
+| 48–50, x 58 | Status | 3 px pixel glyphs: `~` (x 58) = figures differ from the passage theme |
 | 52–56 | `L` + n cells | left thumb loop: 3×5 pixel label at x 0, 5×5 cells from x 5 at 7 px pitch (n = 2..8, ends x 58): filled = element played next, solid frame = note, dotted frame (checkerboard, corners lit) = rest at current density |
 | 58–62 | `R` + n cells | right thumb, same; different widths = different loop lengths, the filled cell moves at half the pulse rate and starts at a different cell each bar when the loop does not fit |
 

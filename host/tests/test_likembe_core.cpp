@@ -215,22 +215,20 @@ TEST(variation_rate_full_changes_and_returns) {
   return ok;
 }
 
-TEST(reroll_at_bar_line) {
+TEST(reroll_immediate) {
   bool ok = true;
   LikembeCore c = Make(lk::kPartBass, 100);
   c.params.variation_pct = 0;
   RunBar(c);
   for (int i = 0; i < 5; ++i) c.Pulse();
   uint16_t seed = c.params.seed;
-  custom::LikembeThumb t0 = c.thumb[0];
-  c.Reroll();
-  CHECK(c.reroll_pending);
-  for (int i = 5; i < 15; ++i) c.Pulse();
-  CHECK(c.reroll_pending && c.params.seed == seed && LikembeCore::SameThumb(t0, c.thumb[0]));
-  c.Pulse();   // last pulse of the bar -> bar line
-  CHECK(!c.reroll_pending && c.params.seed != seed);
-  CHECK(c.pulse_idx == 0 && c.bar_in_passage == 0 && c.thumb[0].phase == 0 && !c.ThemeDiffers());
-  // immediate path keeps the pulse position
+  c.Reroll();   // TR2: applied now, pulse position kept, phases restart
+  CHECK(c.params.seed != seed && c.pulse_idx == 5);
+  CHECK(c.bar_in_passage == 0 && c.thumb[0].phase == 0 && c.thumb[1].phase == 0 && !c.ThemeDiffers());
+  CHECK(c.cycle_bar_idx == 1);
+  for (int i = 5; i < 16; ++i) c.Pulse();
+  CHECK(c.pulse_idx == 0 && c.bar_in_passage == 1);
+  // RerollNow is the same path
   for (int i = 0; i < 3; ++i) c.Pulse();
   seed = c.params.seed; c.RerollNow();
   CHECK(c.params.seed != seed && c.pulse_idx == 3);
@@ -256,26 +254,37 @@ TEST(passage_length) {
   return ok;
 }
 
-TEST(params_live_and_pending) {
+TEST(params_live_immediate) {
   bool ok = true;
   LikembeCore c = Make(lk::kPartBass, 8);
-  for (int i = 0; i < 4; ++i) c.Pulse();
+  c.params.passage_idx = 0;
+  RunBar(c); RunBar(c);
+  for (int i = 0; i < 14; ++i) c.Pulse();
+  CHECK(c.bar_in_passage == 2 && c.pulse_idx == 14);
+  // grid change: regenerated now, pulse position wrapped to the new grid, passage counter kept
   LikembeParams p = c.params; p.grid16 = 0;
   c.SetParams(p);
-  CHECK(c.regen_pending && c.pulses_per_bar == 16);
-  for (int i = 4; i < 16; ++i) c.Pulse();
-  CHECK(!c.regen_pending && c.pulses_per_bar == 12);
+  CHECK(c.pulses_per_bar == 12 && c.pulse_idx == 14 % 12 && c.bar_in_passage == 2);
   CHECK(c.thumb[0].n == lk::kParts[0].loops12[0] && c.thumb[1].n == lk::kParts[0].loops12[1]);
-  // root: immediate pitch change
-  int16_t u = c.EventAt(0).pitch_units;
-  p = c.params; p.root = 5; c.SetParams(p);
-  CHECK(!c.regen_pending && c.EventAt(0).pitch_units == u + 128);
-  // part change: offset/range/pitch stay with the old part until the bar line
-  for (int i = 0; i < 3; ++i) c.Pulse();
-  p = c.params; p.part = lk::kPartLead; c.SetParams(p);
-  CHECK(c.Profile().offset == 0 && c.EventAt(0).pitch_units == u + 128);
+  CHECK(c.thumb[0].phase == 0 && c.thumb[1].phase == 0 && c.cycle_bar_idx == 1);
+  // grid back to 16 at pulse 2: position kept
+  p = c.params; p.grid16 = 1; c.SetParams(p);
+  CHECK(c.pulses_per_bar == 16 && c.pulse_idx == 2);
   while (c.pulse_idx != 0) c.Pulse();
-  CHECK(c.Profile().offset == lk::kParts[lk::kPartLead].offset && !c.EventAt(0).note);
+  CHECK(c.bar_in_passage == 3);
+  // seed change: regenerated now, same figures as a fresh core with that seed
+  p = c.params; p.seed = 4321; c.SetParams(p);
+  LikembeCore f = Make(lk::kPartBass, 4321);
+  CHECK(LikembeCore::SameFigures(c.thumb, f.thumb) && c.bar_in_passage == 3);
+  // root: immediate pitch change, no regeneration
+  int16_t u = c.EventAt(0).pitch_units;
+  for (int i = 0; i < 3; ++i) c.Pulse();
+  custom::LikembeThumb t0 = c.thumb[0];
+  p = c.params; p.root = 5; c.SetParams(p);
+  CHECK(c.EventAt(0).pitch_units == u + 128 && c.pulse_idx == 3 && c.thumb[0].phase == t0.phase);
+  // part change: offset/range/figures switch to the new part now
+  p = c.params; p.part = lk::kPartLead; c.SetParams(p);
+  CHECK(c.Profile().offset == lk::kParts[lk::kPartLead].offset && !c.EventAt(0).note && c.pulse_idx == 3);
   return ok;
 }
 
@@ -320,18 +329,20 @@ TEST(pitch_mapping_and_range) {
 TEST(pack_unpack) {
   bool ok = true;
   LikembeParams p; p.density_pct = 77; p.part = 3; p.root = 11; p.octave = -2; p.grid16 = 0;
-  p.variation_pct = 100; p.passage_idx = 8; p.seed = 0xBEEF;
+  p.variation_pct = 100; p.passage_idx = 8; p.seed = 0xBEEF; p.clock_src = lk::kClockTr4;
   LikembeCore a; a.Init(p);
   uint64_t d = a.Pack();
-  CHECK(d >> 43 == 0);
+  CHECK(d >> 47 == 0 && ((d >> 44) & 0x7) == lk::kClockTr4);
   LikembeCore b; b.Unpack(d);
   CHECK(std::memcmp(&a.params, &b.params, sizeof p) == 0);
   CHECK(LikembeCore::SameFigures(a.thumb, b.thumb));
   // garbage
   LikembeParams g = LikembeCore::UnpackParams(~0ull);
-  CHECK(g.density_pct == 100 && g.octave == lk::kOctaveMax && g.root == 11 && g.variation_pct == 100 && g.passage_idx == lk::kPassageCount - 1);
+  CHECK(g.density_pct == 100 && g.octave == lk::kOctaveMax && g.root == 11 && g.variation_pct == 100 && g.passage_idx == lk::kPassageCount - 1 && g.clock_src == lk::kClockAuto);
   g = LikembeCore::UnpackParams(0);
-  CHECK(g.density_pct == 0 && g.octave == lk::kOctaveMin);
+  CHECK(g.density_pct == 0 && g.octave == lk::kOctaveMin && g.clock_src == lk::kClockAuto);
+  for (uint8_t s = 0; s < 8; ++s)
+    CHECK(LikembeCore::UnpackParams((uint64_t)s << 44).clock_src == (s < lk::kClockSrcCount ? s : lk::kClockAuto));
   for (int o = lk::kOctaveMin; o <= lk::kOctaveMax; ++o) {
     p.octave = (int8_t)o; a.Init(p);
     CHECK(LikembeCore::UnpackParams(a.Pack()).octave == o);
@@ -372,9 +383,9 @@ TEST(cycle_bars_and_index) {
   b.Reset(); CHECK(b.cycle_bar_idx == 1);
   RunBar(b); CHECK(b.cycle_bar_idx == 2);
   LikembeParams p = b.params; p.grid16 = 0; b.SetParams(p);
-  RunBar(b); CHECK(b.cycle_bar_idx == 1 && b.cycle_bars == 2);
+  CHECK(b.cycle_bar_idx == 1 && b.cycle_bars == 2);
   RunBar(b); CHECK(b.cycle_bar_idx == 2);
-  b.Reroll(); RunBar(b); CHECK(b.cycle_bar_idx == 1);
+  b.Reroll(); CHECK(b.cycle_bar_idx == 1);
   CHECK(b.cycle_bars == LikembeCore::CycleBars(b.thumb[0].n, b.thumb[1].n, b.pulses_per_bar));
   // invariant under full variation: N matches current lengths, idx in 1..N
   LikembeCore v = Make(lk::kPartSolo, 9);
@@ -402,9 +413,9 @@ int main() {
   RUN(density_statistics);
   RUN(variation_rate_zero_static);
   RUN(variation_rate_full_changes_and_returns);
-  RUN(reroll_at_bar_line);
+  RUN(reroll_immediate);
   RUN(passage_length);
-  RUN(params_live_and_pending);
+  RUN(params_live_immediate);
   RUN(pitch_mapping_and_range);
   RUN(pack_unpack);
   RUN(cycle_bars_and_index);

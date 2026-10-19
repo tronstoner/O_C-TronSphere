@@ -64,8 +64,11 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 - Host gaps: one applet on one side; no ClockSetup/internal clock; no MIDI/EEPROM.
 - `custom_min` currently 92,836 B flash / 20,472 B RAM.
 - Likembe (Phase 3): core + glue (`custom/applets/Likembe.h`, ID 201) implemented, host tests
-  pass, sim-verified (I/O timing, re-roll at bar line, CV1 density, screenshots). Not yet on
-  hardware. Density 0–100 %, Oct parameter (−2…+3). `custom_min` now 98,588 B flash / 20,784 B RAM (lab-tuned per-part step weights and thumb-L middle start ported to the core, host-verified). Mi-solo/Solo profiles provisional.
+  pass, sim-verified (I/O timing, CV1 density, screenshots). Not yet on
+  hardware. Density 0–100 %, Oct parameter (−2…+3). 2026-10-19 (host-verified, not sim/hardware):
+  all setting changes and TR2 re-roll immediate (no pending state), `Pass` renamed `Roll`,
+  new `Clk` source (Auto/TR1..TR4, bits 44–46), menu order Dens, Var, Part, Root, Oct, Grid, Roll, Seed, Clk.
+  `custom_min` now 98,660 B flash / 20,784 B RAM (+72 B flash). Mi-solo/Solo profiles provisional.
 - Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 9 combinations).
 
 ### Open decisions
@@ -91,4 +94,5 @@ Hello hardware check (Phase 1 remainder) can be done with the same flash.
 | 2026-10 | Host stubs via `-include` prelude + include-guard pre-definition, not only include-path shadowing | Quoted includes resolve next to the including file first, so shadowing alone cannot replace sibling HAL headers (see `docs/HOST_SIM.md`) |
 | 2026-10 | Phase 3 = Likembe, one part per applet instance; evolving voltage moves after it | User decision |
 | 2026-10-10 | License: GPLv3 (GPL-3.0-or-later) for the whole repo, `LICENSE` at root | Combined work is GPLv3 anyway (4 GPLv3 upstream files); matches NitroTron3; repo may be published on GitHub. Details `docs/UPSTREAM.md` |
+| 2026-10-19 | A setting change is audible immediately; no waiting for the next bar/step unless the module doc states otherwise | Turning a knob must give instant feedback; deferred changes feel broken. Likembe: Grid/Part/Seed and TR2 re-roll now immediate |
 | 2026-10-19 | No master clock rework; use upstream clock + trigger map | Existing per-channel mult/div and in-applet division cover the needs; keeps `firmware/` edits at 2 files |

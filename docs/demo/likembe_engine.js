@@ -26,6 +26,7 @@ const C = {
   kDensityMax: 100, kOctaveMin: -2, kOctaveMax: 3, kDefaultOctave: 0, kVariationMax: 100,
   kDensityCvRange: 35,
   kPassageBars: [0, 1, 2, 3, 4, 5, 6, 7, 8],
+  kClockAuto: 0, kClockSrcCount: 5,
   kDefaultPassageIdx: 0, kDefaultRoot: 4, kDefaultGrid16: 1, kDefaultSeed: 1,
   kPartStreamOffset: 7919, kPassageStreamOffset: 31, kSeedMix: 0x9E3779B1, kSeedNonZero: 0x6D2B79F5,
 };
@@ -68,7 +69,7 @@ function defaults(part) {
   if (!(part >= 0 && part < 4)) part = 0;
   return {density_pct: C.kParts[part].density_pct, part, root: C.kDefaultRoot, octave: C.kDefaultOctave,
     grid16: C.kDefaultGrid16, variation_pct: C.kParts[part].variation_pct, passage_idx: C.kDefaultPassageIdx,
-    seed: C.kDefaultSeed};
+    seed: C.kDefaultSeed, clock_src: C.kClockAuto};
 }
 function clampParams(p) {
   p = Object.assign({}, p);
@@ -80,6 +81,7 @@ function clampParams(p) {
   if (p.variation_pct > C.kVariationMax) p.variation_pct = C.kVariationMax;
   if (p.passage_idx >= C.kPassageBars.length) p.passage_idx = C.kPassageBars.length - 1;
   p.seed = p.seed & 0xFFFF;
+  if (!(p.clock_src >= 0 && p.clock_src < C.kClockSrcCount)) p.clock_src = C.kClockAuto;
   return p;
 }
 const newThumb = () => ({n: 2, phase: 0, e: Array.from({length: 8}, () => ({degree: 0, draw: 0}))});
@@ -92,7 +94,6 @@ class Core {
     this.params = defaults(0);
     this.density_mod = 0;
     this.pulses_per_bar = 16; this.pulse_idx = 0; this.bar_in_passage = 0;
-    this.reroll_pending = false; this.regen_pending = false;
     this.thumb = [newThumb(), newThumb()]; this.theme = [newThumb(), newThumb()];
     this.rng_part = {s: 1}; this.rng_passage = {s: 1};
     this.base_midi = 45; this.key_lo = 0; this.key_hi = 8; this.active_part = 0;
@@ -102,13 +103,12 @@ class Core {
   // Lab constants change at the next bar line (like a firmware rebuild would, minus the reset).
   setLab(lab) { this.labPending = cloneLab(lab); }
 
-  Init(p) { this.params = clampParams(p); this.regen_pending = false; this.reroll_pending = false; this.Regenerate(); }
+  Init(p) { this.params = clampParams(p); this.Regenerate(false); }
   SetParams(p) {
     const np = clampParams(p);
     const regen = np.grid16 !== this.params.grid16 || np.part !== this.params.part || np.seed !== this.params.seed;
     this.params = np;
-    this.UpdatePitchBase();
-    if (regen) this.regen_pending = true;
+    if (regen) this.Regenerate(true); else this.UpdatePitchBase();
   }
   SetDensityMod(d) { this.density_mod = d; }
   EffectiveDensity() { return clampI(this.params.density_pct + this.density_mod, 0, C.kDensityMax); }
@@ -143,8 +143,8 @@ class Core {
     const strokes = th ? (j >> 1) : ((j + 1) >> 1);
     return this.ElementIndex(th, strokes);
   }
-  Reroll() { this.reroll_pending = true; }
-  RerollNow() { this.reroll_pending = false; this.DoReroll(); }
+  Reroll() { this.DoReroll(); }
+  RerollNow() { this.DoReroll(); }
   Reset() {
     this.pulse_idx = 0; this.bar_in_passage = 0;
     this.thumb[0].phase = this.thumb[1].phase = 0;
@@ -226,17 +226,18 @@ class Core {
     this.bar_in_passage = 0;
     this.SyncCycle(true);
   }
-  Regenerate() {
-    const p = this.params;
+  Regenerate(keepPos) {
+    const p = this.params, pi = this.pulse_idx, bip = this.bar_in_passage;
     this.pulses_per_bar = p.grid16 ? C.kGrid16 : C.kGrid12;
     this.active_part = p.part;
-    this.pulse_idx = 0;
+    this.pulse_idx = keepPos ? pi % this.pulses_per_bar : 0;
     this.UpdatePitchBase();
     this.rng_part = {s: seedState(u32(p.seed + C.kPartStreamOffset * p.part))};
     this.rng_passage = {s: seedState(u32(p.seed + C.kPassageStreamOffset))};
     const d = p.grid16 ? this.Profile().loops16 : this.Profile().loops12;
     this.thumb[0].n = d[0]; this.thumb[1].n = d[1];
     this.GenPart();
+    if (keepPos) this.bar_in_passage = bip;
   }
   RollLoopLengths() {
     const f = this.FitMask(), all = Core.AllMask(), r = this.rng_passage;
@@ -343,8 +344,6 @@ class Core {
     const strokes = this.pulses_per_bar >> 1;
     for (let th = 0; th < 2; ++th) this.thumb[th].phase = (this.thumb[th].phase + strokes) % this.thumb[th].n;
     if (this.bar_in_passage < 255) ++this.bar_in_passage;
-    if (this.regen_pending) { this.regen_pending = false; this.reroll_pending = false; this.Regenerate(); return; }
-    if (this.reroll_pending) { this.reroll_pending = false; this.DoReroll(); return; }
     const len = C.kPassageBars[this.params.passage_idx];
     if (len && this.bar_in_passage >= len) { this.NewPassage(false); return; }
     this.Evolve();
