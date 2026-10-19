@@ -275,3 +275,18 @@ The pattern engine is independent of sound; this is the reference voice set, in 
 | 5.1 | 0.25 | 0.02 s |
 
 **Electric guitar (alternative part voice):** Karplus–Strong string, excited near the bridge (pick position 12% of the string), with decay shortening for higher notes.
+
+## Module implementation (2026-10) — deviations and additions
+
+The O_C applet (`custom/core/likembe_core.h`, `custom/applets/Likembe.h`, doc `docs/modules/likembe.md`) implements this engine with these deviations and additions:
+
+- **One part per applet instance.** Two instances (e.g. Bass + Lead) on one clock give the two-part texture; drums/guide rhythm are not part of the module.
+- **Density 0–100 % is a live threshold, no regeneration.** Each element stores its rest draw (0..255); it rests iff it is not element 0 and `draw * 100 >= density * 256`. Changing density (encoder or CV1, ±3 V = ±35 points) changes rests immediately without touching the figures.
+- **Oct parameter** (−2…+3) shifts all pitches by whole octaves; the spec's register setting per part is replaced by it.
+- **Re-roll at the bar line.** TR2 sets a pending re-roll (new seed drawn from the passage stream, new loop lengths, new theme) applied at the next bar line; the Seed encoder re-rolls immediately. Grid/part/seed changes regenerate at the next bar line.
+- **Passage length default Off** (manual re-roll only); options 8/16/24/32/48/64 bars. Energy build is not implemented (`kEnergyBuildPct` = 0).
+- **Mi-solo and Solo profiles** added, **provisional** (to be tuned by ear).
+- **Velocity gate** on Out A: 5 V on accented notes (element 0 of a thumb), 3 V otherwise, gate length 50 % of the measured pulse interval; Out B pitch 1 V/oct.
+- Integer-only port: xorshift32 streams seeded `seed + 7919 * part` (part stream) and `seed + 31` (passage stream); probability weights scaled to integers (`kStepWeight`, `kMutWeight`).
+- **Lab-exposed constants:** step weights, thumb-L start key (lowest = firmware; "middle" is a lab option), mutation weights, return-to-theme %, loop-change %, octave headroom, gate levels and gate length can be tuned in the browser lab and exported as a `likembe_constants.h` snippet.
+- **Browser lab:** `docs/demo/likembe-lab.html` with the engine in `docs/demo/likembe_engine.js`, a 1:1 JS port of the C++ core; `task host:parity` checks that both produce identical event streams.

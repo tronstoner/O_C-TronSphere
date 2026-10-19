@@ -27,3 +27,8 @@ tasks:
     desc: Remove host/build
     cmds:
       - rm -rf build
+
+  parity:
+    desc: Likembe browser lab engine (docs/demo/likembe_engine.js) vs C++ core event streams
+    cmds:
+      - ./tools/parity.sh

@@ -100,6 +100,41 @@ the anchor (−5..+6 semitones).
 
 Unpack regenerates everything from the seed (evolving state is not persisted).
 
+## Browser lab
+
+`docs/demo/likembe-lab.html` (open directly from disk, `file://`; no build, no network).
+The pattern engine lives in `docs/demo/likembe_engine.js`, a 1:1 port of
+`likembe_core.h` (same xorshift32 streams and seeding, integer math, draw order, thresholds,
+mutation rules, bar-line handling, Oct/Root mapping, part profiles incl. the provisional
+Mi-solo/Solo, passages). Given seed + parameters it produces the same event stream as the
+module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
+`host/tools/likembe_lab_parity.mjs`, line format `bar pulse thumb degree rest accent pitch_units`).
+
+- **Two voices** = two applet instances on one tempo (each clocked x4 per beat on the 16 grid,
+  x3 on 12). Per voice the module parameters (Dens, Part, Root, Oct, Grid, Var, Pass, Seed)
+  with the module's ranges and steps; "re-roll (TR2, next bar)" = TR2, "re-roll now" = Seed
+  encoder; typing a seed regenerates at the next bar line. Mute per voice.
+- **Display:** a 4x canvas of the module display below the parameter line (tines, step row,
+  running light, beat ticks, bar-cycle squares, status glyphs, L/R loop rows), drawn by a port of
+  `Likembe::View`, plus a text line per thumb (`X` accent, `x` note, `.` rest, `[ ]` next element,
+  degrees, phase, cycle, seed, passage, pending flags).
+- **Sound:** tine synth, amp and room from the Congotronics demo. Velocity = Out A gate level
+  / 5 V (accent 5 V = 1.0, normal 3 V = 0.6); note sustain = gate length.
+- **Reference only (not in the firmware):** bass drum patterns and clave/bell/beat from the
+  demo; they follow voice 1's grid.
+- **Lab / constants:** firmware constants with their C++ names, per part: `kStepWeight`,
+  thumb-L start key (lowest = firmware, middle = lab idea, no constant yet), `kMutWeight`,
+  `kReturnToThemePct`, `kLoopChangePct`, `kOctaveHeadroom`; global and live:
+  `kGateAccentUnits`, `kGateNormalUnits` (as volts), `kGateLengthPct`. Engine constants apply at
+  the next bar line (immediately when stopped). **Export constants** prints a snippet in
+  `likembe_constants.h` format; a value that differs between parts is printed as a per-part
+  table with a note that the core needs a change for it.
+- **Dump events:** N bars from Init with the voice's current parameters, in the parity format,
+  headed by the equivalent `likembe_dump` arguments (flagged when lab values differ from firmware).
+
+Workflow: tune by ear in the lab, Export, paste into `likembe_constants.h`, port the lab
+default in `labDefaults()` (`likembe_engine.js`) to the same values, `task host:parity`, `task host:test`.
+
 ## Constants (`custom/core/likembe_constants.h`)
 
 `kUnitsPerSemitone`, `kUnitsPerOctave`, `kMidiAtZeroUnits`, `kMaxPitchUnits`, `kTunings`,

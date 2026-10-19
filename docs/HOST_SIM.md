@@ -285,6 +285,15 @@ Replaced by `host/sim/host_firmware.cpp` (real `.cpp` is hardware-bound):
 `get_voltage_scaling()` (OC_DAC.cpp); `HS::applet_is_hidden/get_applet_name/get_applet_icon`
 (hemisphere_config.h registry, not compiled).
 
+## Likembe lab parity
+
+`task host:parity` (`host/tools/parity.sh`) builds `host/tools/likembe_dump.cpp` (includes
+`custom/core/likembe_core.h`, same g++ flags as the tests) and runs it and
+`host/tools/likembe_lab_parity.mjs` (loads `docs/demo/likembe_engine.js`, the browser lab
+engine) for a fixed set of seed/part/grid/Oct/Var/Pass combinations, diffing the event streams
+(`bar pulse thumb degree rest accent pitch_units`). Exit non-zero on any mismatch. Needs `node`
+(nvm's `nvm.sh` is sourced if `node` is not on PATH). Outputs in `host/build/parity/`.
+
 ## Adding a test for a new core
 
 1. Keep the core in `custom/core/<name>_core.h`, plain C++17, no Arduino/O_C includes.

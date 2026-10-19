@@ -37,6 +37,9 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 | `docs/modules/likembe-impl-plan.md` | current | Likembe steps, API, doc/JS deviations, open questions |
 | `docs/research/Likembe pattern engine technical concept.md` | reference | Likembe pattern engine spec |
 | `docs/research/Congotronics line generator.html` | reference | JS reference implementation of the pattern engine |
+| `docs/demo/likembe-lab.html` | current | Likembe browser lab: two voices, module display, sound, lab constants + export, event dump |
+| `docs/demo/likembe_engine.js` | current | 1:1 JS port of `likembe_core.h` used by the lab (parity-checked) |
+| `host/tools/likembe_dump.cpp`, `likembe_lab_parity.mjs`, `parity.sh` | current | Likembe C++/JS parity check (`task host:parity`) |
 | `docs/modules/evolving-voltage-concept.md` | concept | Vestige-derived evolving voltage/trigger module |
 | `docs/research/phazerville-notes.md` | current | Upstream facts, lineage, applet API, inventory |
 | `docs/research/nitrotron3-lessons.md` | current | What carries over from the NitroTron3 project |
@@ -63,6 +66,7 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 - Likembe (Phase 3): core + glue (`custom/applets/Likembe.h`, ID 201) implemented, host tests
   pass, sim-verified (I/O timing, re-roll at bar line, CV1 density, screenshots). Not yet on
   hardware. Density 0–100 %, Oct parameter (−2…+3). `custom_min` now 97,868 B flash / 20,744 B RAM. Mi-solo/Solo profiles provisional.
+- Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 9 combinations).
 
 ### Open decisions
 - Open questions in `docs/modules/evolving-voltage-concept.md` §6.

@@ -1,0 +1,479 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Likembe lab</title>
+<!-- Browser lab for the Likembe applet. Pattern engine: likembe_engine.js (1:1 port of
+     custom/core/likembe_core.h, checked by `task host:parity`). See docs/modules/likembe.md. -->
+<style>
+:root{--bg:#f4f5f7;--panel:#fff;--ink:#14171c;--muted:#5d6573;--line:#d5d9e0;--accent:#1c6fd0;--oled:#000;--pix:#cfe8ff}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]){--bg:#101216;--panel:#181b21;--ink:#e6e9ee;--muted:#98a1b0;--line:#2b3039;--accent:#5aa8ff}}
+:root[data-theme="dark"]{--bg:#101216;--panel:#181b21;--ink:#e6e9ee;--muted:#98a1b0;--line:#2b3039;--accent:#5aa8ff}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:14px/1.45 system-ui,-apple-system,"Segoe UI",sans-serif}
+.wrap{max-width:1180px;margin:0 auto;padding:16px}
+h1{font-size:20px;margin:0 0 4px} h2{font-size:15px;margin:0 0 8px} .muted{color:var(--muted)}
+section{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:12px;margin-top:12px}
+.bar{display:flex;flex-wrap:wrap;gap:10px 16px;align-items:center}
+.voices{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,520px),1fr));gap:12px}
+.voices section{margin-top:12px}
+.vgrid{display:grid;grid-template-columns:auto 1fr;gap:12px;align-items:start}
+@media (max-width:560px){.vgrid{grid-template-columns:1fr}}
+canvas.oled{width:256px;height:200px;image-rendering:pixelated;background:var(--oled);border-radius:4px;display:block;max-width:100%}
+.params{display:grid;grid-template-columns:3.2rem minmax(0,1fr) 3rem;gap:4px 8px;align-items:center}
+.params output{font-variant-numeric:tabular-nums;text-align:right;color:var(--muted)}
+.params .w2{grid-column:2/4}
+input,select,button{font:inherit;color:var(--ink);background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:2px 6px}
+input[type=range]{padding:0;accent-color:var(--accent)}
+button{cursor:pointer} button:hover{border-color:var(--accent)}
+button.on{background:var(--accent);color:#fff;border-color:var(--accent)}
+pre{font:12px/1.4 ui-monospace,SFMono-Regular,Menlo,monospace;margin:8px 0 0;white-space:pre;overflow:auto}
+pre.out{max-height:22rem;background:var(--bg);border:1px solid var(--line);border-radius:5px;padding:6px}
+table{border-collapse:collapse;width:100%} td,th{padding:3px 6px;border-bottom:1px solid var(--line);text-align:left;white-space:nowrap}
+th{font-weight:600;color:var(--muted)} td input{width:4.2rem} code{font:12px ui-monospace,Menlo,monospace;color:var(--muted)}
+.tablewrap{overflow-x:auto}
+.seed input{width:5.5rem}
+</style>
+</head>
+<body>
+<div class="wrap">
+<h1>Likembe lab</h1>
+<div class="muted">Same pattern engine as <code>custom/core/likembe_core.h</code> (checked by <code>task host:parity</code>). Two voices = two applet instances on one clock.</div>
+
+<section>
+  <div class="bar">
+    <button id="play">Play</button>
+    <label>Tempo <input id="bpm" type="number" min="20" max="300" step="1" value="82" style="width:4.5rem"> bpm</label>
+    <button id="restart" title="Init both voices from their parameters (like power-on / preset load)">Init</button>
+    <label>Master <input id="vol" type="range" min="0" max="1" step="0.01" value="0.7"></label>
+    <span class="muted">Reference only (not in the firmware):</span>
+    <label>Bass drum <select id="kick"><option value="off">Off</option><option value="four" selected>Four</option><option value="pickup">Pickup</option><option value="half">Half</option><option value="three">Three</option></select></label>
+    <label>Clave <select id="clave"><option value="off">Off</option><option value="clave" selected>Clave</option><option value="bell">Bell</option><option value="beat">Beat</option></select></label>
+  </div>
+  <div class="muted" style="margin-top:4px">Reference layers follow voice 1's grid.</div>
+</section>
+
+<div class="voices" id="voices"></div>
+
+<section>
+  <h2>Lab / constants <span class="muted" style="font-weight:400">— firmware constants (<code>likembe_constants.h</code>). Apply at the next bar line; <em>live</em> rows apply immediately.</span></h2>
+  <div class="tablewrap"><table id="lab"></table></div>
+  <div class="bar" style="margin-top:8px"><button id="labReset">Firmware values</button><button id="export">Export constants</button></div>
+  <pre class="out" id="exportOut" hidden></pre>
+</section>
+
+<section>
+  <h2>Dump</h2>
+  <div class="muted">Events from Init with the voice's current parameters and lab values. Format <code>bar pulse thumb degree rest accent pitch_units</code>, same as <code>host/tools/likembe_dump.cpp</code>.</div>
+  <pre class="out" id="dumpOut" hidden></pre>
+</section>
+</div>
+
+<script src="likembe_engine.js"></script>
+<script>
+(() => {
+'use strict';
+const E = window.LikembeEngine, K = E.C, $ = s => document.querySelector(s);
+const NOTES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+// One place for display formatting.
+const FMT = {
+  pct: v => `${v}%`, oct: v => v > 0 ? `+${v}` : `${v}`, grid: g => g ? '16' : '12',
+  pass: i => K.kPassageBars[i] ? String(K.kPassageBars[i]) : 'Off',
+  volt: v => `${Number(v).toFixed(1)} V`,
+};
+let lab = E.labDefaults();          // live lab state (UI); cores get it at the bar line
+const UNITS_PER_VOLT = 1536;
+
+// ---------------- voices ----------------
+const voices = [0, 1].map(v => {
+  const core = new E.Core(lab);
+  const p = E.defaults(v === 0 ? 0 : 1); p.seed = v === 0 ? 1 : 2;
+  core.Init(p);
+  return {core, mute: false, nextTime: 0, snaps: [], view: null, gateEnd: 0, last: null, dumpBars: 32};
+});
+
+function buildVoiceUI(v){
+  const V = voices[v], el = document.createElement('section');
+  const opt = (arr, f) => arr.map((x, i) => `<option value="${f ? f(x, i)[0] : i}">${f ? f(x, i)[1] : x}</option>`).join('');
+  el.innerHTML = `
+  <div class="bar" style="justify-content:space-between"><h2 style="margin:0">Voice ${v + 1}</h2>
+    <label><input type="checkbox" data-k="mute"> mute</label></div>
+  <div class="vgrid" style="margin-top:8px">
+    <canvas class="oled" width="64" height="50"></canvas>
+    <div class="params">
+      <span>Dens</span><input type="range" min="0" max="100" step="5" data-k="density_pct"><output data-o="density_pct"></output>
+      <span>Part</span><select class="w2" data-k="part">${opt(K.kPartNames)}</select>
+      <span>Root</span><select class="w2" data-k="root">${opt(NOTES)}</select>
+      <span>Oct</span><select class="w2" data-k="octave">${opt([-2,-1,0,1,2,3], x => [x, FMT.oct(x)])}</select>
+      <span>Grid</span><select class="w2" data-k="grid16"><option value="1">16</option><option value="0">12</option></select>
+      <span>Var</span><input type="range" min="0" max="100" step="5" data-k="variation_pct"><output data-o="variation_pct"></output>
+      <span>Pass</span><select class="w2" data-k="passage_idx">${opt(K.kPassageBars, (x, i) => [i, FMT.pass(i)])}</select>
+      <span>Seed</span><input class="w2" type="number" min="0" max="65535" step="1" data-k="seed" title="New seed: regenerates at the next bar line (SetParams)" style="width:6rem">
+      <span></span><span class="w2 bar" style="gap:4px"><button data-a="reroll" title="TR2: new seed + passage at the next bar line">re-roll (TR2, next bar)</button><button data-a="rerollNow" title="Seed encoder: new seed + passage now">re-roll now</button></span>
+    </div>
+  </div>
+  <pre data-o="text"></pre>
+  <div class="bar" style="margin-top:6px"><label>Bars <input type="number" min="1" max="4096" value="32" data-k="dumpBars" style="width:4.5rem"></label><button data-a="dump">Dump events</button></div>`;
+  $('#voices').appendChild(el);
+  V.el = el; V.canvas = el.querySelector('canvas'); V.ctx = V.canvas.getContext('2d');
+  V.text = el.querySelector('[data-o=text]');
+  el.querySelectorAll('[data-k]').forEach(inp => {
+    const k = inp.dataset.k;
+    inp.addEventListener(inp.type === 'range' ? 'input' : 'change', () => {
+      if (k === 'mute') { V.mute = inp.checked; return; }
+      if (k === 'dumpBars') { V.dumpBars = Math.max(1, parseInt(inp.value, 10) || 1); return; }
+      const p = Object.assign({}, V.core.params);   // core owns the seed after re-rolls (like the glue)
+      let val = parseInt(inp.value, 10); if (Number.isNaN(val)) return;
+      if (k === 'seed') val = Math.max(0, Math.min(65535, val));
+      p[k] = val;
+      V.core.SetParams(p);
+      syncVoiceUI(v); refreshIdle(v);
+    });
+  });
+  el.querySelector('[data-a=reroll]').onclick = () => { V.core.Reroll(); refreshIdle(v); };
+  el.querySelector('[data-a=rerollNow]').onclick = () => { V.core.RerollNow(); syncVoiceUI(v); refreshIdle(v); };
+  el.querySelector('[data-a=dump]').onclick = () => dumpVoice(v);
+  syncVoiceUI(v);
+}
+function syncVoiceUI(v){
+  const V = voices[v], p = V.core.params;
+  V.el.querySelectorAll('[data-k]').forEach(inp => {
+    const k = inp.dataset.k;
+    if (k in p && document.activeElement !== inp) inp.value = String(p[k]);
+  });
+  V.el.querySelector('[data-o=density_pct]').textContent = FMT.pct(p.density_pct);
+  V.el.querySelector('[data-o=variation_pct]').textContent = FMT.pct(p.variation_pct);
+}
+
+// ---------------- snapshots (what the module display shows at a pulse) ----------------
+function snapshot(V, t, ev, gateEnd){
+  const c = V.core, B = c.pulses_per_bar, dens = c.EffectiveDensity();
+  const events = []; for (let i = 0; i < B; ++i) { const e = c.EventAt(i); events.push({note: e.note, accent: e.accent}); }
+  const thumbs = [0, 1].map(th => {
+    const T = c.thumb[th];
+    return {n: T.n, phase: T.phase, cur: c.CurrentElement(th),
+      rest: T.e.slice(0, T.n).map((x, j) => E.Core.Rests(j, x, dens)), deg: T.e.slice(0, T.n).map(x => x.degree)};
+  });
+  return {t, B, pulse_idx: c.pulse_idx, events, thumbs, cycle_bars: c.cycle_bars, cycle_bar_idx: c.cycle_bar_idx,
+    reroll: c.reroll_pending, regen: c.regen_pending, theme: c.ThemeDiffers(), key_lo: c.key_lo, key_hi: c.key_hi,
+    headroom: c.L().headroom, seed: c.params.seed, bar_in_passage: c.bar_in_passage, pass: K.kPassageBars[c.params.passage_idx],
+    lab_pending: !!c.labPending, ev, gateEnd, havePulse: !!ev};
+}
+function refreshIdle(v){   // stopped: show the core as it is now
+  const V = voices[v];
+  if (!playing) V.view = Object.assign(snapshot(V, 0, null, 0), {havePulse: !!V.last});
+}
+
+// ---------------- OLED renderer (port of Likembe::View, y offset 14) ----------------
+const W = 64, H = 50, Y0 = 14;
+function makeFb(){ return new Uint8Array(W * H); }
+function px(fb, x, y){ y -= Y0; if (x >= 0 && x < W && y >= 0 && y < H) fb[y * W + x] = 1; }
+function line(fb, x0, y0, x1, y1){
+  const dx = Math.abs(x1 - x0), dy = -Math.abs(y1 - y0), sx = x0 < x1 ? 1 : -1, sy = y0 < y1 ? 1 : -1; let e = dx + dy;
+  for (;;) { px(fb, x0, y0); if (x0 === x1 && y0 === y1) break; const e2 = 2 * e; if (e2 >= dy) { e += dy; x0 += sx; } if (e2 <= dx) { e += dx; y0 += sy; } }
+}
+function rect(fb, x, y, w, h){ for (let j = 0; j < h; ++j) for (let i = 0; i < w; ++i) px(fb, x + i, y + j); }
+function frame(fb, x, y, w, h){ line(fb, x, y, x + w - 1, y); line(fb, x, y + h - 1, x + w - 1, y + h - 1); line(fb, x, y, x, y + h - 1); line(fb, x + w - 1, y, x + w - 1, y + h - 1); }
+function dotted(fb, x, y, s){ for (let i = 0; i < s; i += 2) { px(fb, x + i, y); px(fb, x + i, y + s - 1); px(fb, x, y + i); px(fb, x + s - 1, y + i); } }
+
+function render(V, now){
+  const s = V.view, fb = makeFb(); if (!s) return;
+  // tines
+  const BRIDGE = 24, TMAX = 12, TMIN = 6, TP = 4, CX = 31;
+  let n = s.key_hi + s.headroom - s.key_lo + 1; if (n > 15) n = 15;
+  const col = r => { const lo = s.key_lo, d = lo + r; return (d - (lo + ((d ^ lo) & 1))) / 2; };
+  const tx = r => ((s.key_lo + r) & 1) ? CX + 2 + col(r) * TP : CX - 2 - col(r) * TP;
+  const tl = r => Math.max(TMIN, TMAX - col(r));
+  let xl = CX, xr = CX;
+  for (let r = 0; r < n; ++r) { const x = tx(r); xl = Math.min(xl, x); xr = Math.max(xr, x); line(fb, x, BRIDGE + 1, x, BRIDGE + tl(r)); }
+  line(fb, xl - 2, BRIDGE, xr + 2, BRIDGE);
+  if (V.last) {
+    const r = V.last.degree - s.key_lo;
+    if (r >= 0 && r < n) {
+      const x = tx(r), tip = BRIDGE + tl(r);
+      if (now < V.gateEnd) { rect(fb, x - 1, BRIDGE + 1, 3, tl(r)); if (V.last.accent) rect(fb, x - 2, tip - 2, 5, 3); }
+      else line(fb, x - 1, tip + 1, x + 1, tip + 1);
+    }
+  }
+  // steps
+  const B = s.B, w = 64 / B | 0, SY = 38, SH = 6;
+  for (let i = 0; i < B; ++i) {
+    const e = s.events[i], x = i * w;
+    if (e.note) { const h = e.accent ? SH : SH - 3; rect(fb, x, SY + SH - h, w - 1, h); }
+    else px(fb, x + ((w - 1) >> 1), SY + SH - 1);
+  }
+  if (s.havePulse) { const cur = s.pulse_idx === 0 ? B - 1 : s.pulse_idx - 1; rect(fb, cur * w, SY + SH, w - 1, 2); }
+  const beat = B / 4; for (let i = 0; i < B; i += beat) line(fb, i * w, 46, i * w + (i === 0 ? 1 : 0), 46);
+  // squares
+  const N = s.cycle_bars, cur = s.cycle_bar_idx - 1, SQ = 48, SQW = 50;
+  if (N * 4 <= SQW) { for (let i = 0; i < N; ++i) (i === cur ? rect : frame)(fb, i * 4, SQ, 3, 3); }
+  else { const ww = SQW / N > 1 ? (SQW / N | 0) : 1; for (let i = 0; i < N && i * ww < SQW; ++i) { const x = i * ww; if (i === cur) rect(fb, x, SQ, ww > 1 ? ww - 1 : 1, 3); else px(fb, x, SQ + 2); } }
+  // thumbs
+  [0, 1].forEach(th => {
+    const y = 52 + th * 6, T = s.thumbs[th];
+    for (let j = 0; j < T.n; ++j) { const x = 5 + j * 7; if (j === T.cur) rect(fb, x, y, 5, 5); else if (T.rest[j]) dotted(fb, x, y, 5); else frame(fb, x, y, 5, 5); }
+    line(fb, 0, y, 0, y + 4);
+    if (th) { px(fb, 1, y); px(fb, 2, y + 1); px(fb, 1, y + 2); px(fb, 2, y + 3); px(fb, 2, y + 4); } else line(fb, 1, y + 4, 2, y + 4);
+  });
+  // status
+  if (s.reroll && (Math.floor(performance.now() / 250) & 1)) { line(fb, 52, 49, 54, 49); px(fb, 53, 48); px(fb, 53, 50); }
+  if (s.theme) { px(fb, 58, 49); px(fb, 59, 48); px(fb, 60, 49); px(fb, 61, 50); px(fb, 62, 49); }
+  // blit
+  const img = V.ctx.createImageData(W, H), on = [207, 232, 255];
+  for (let i = 0; i < W * H; ++i) { const o = i * 4, b = fb[i]; img.data[o] = b ? on[0] : 0; img.data[o + 1] = b ? on[1] : 0; img.data[o + 2] = b ? on[2] : 0; img.data[o + 3] = 255; }
+  V.ctx.putImageData(img, 0, 0);
+  // text
+  const fig = T => T.rest.map((r, j) => (j === T.cur ? '[' : ' ') + (r ? '.' : (j === 0 ? 'X' : 'x')) + (j === T.cur ? ']' : ' ')).join('');
+  const L = s.thumbs[0], R = s.thumbs[1];
+  V.text.textContent =
+    `L ${fig(L)}  n ${L.n}  phase ${L.phase}  deg ${L.deg.join(' ')}\n` +
+    `R ${fig(R)}  n ${R.n}  phase ${R.phase}  deg ${R.deg.join(' ')}\n` +
+    `cycle ${s.cycle_bar_idx}/${s.cycle_bars}  seed ${s.seed}  passage ${s.pass ? `${s.bar_in_passage}/${s.pass}` : `Off (${s.bar_in_passage})`}` +
+    `${s.theme ? '  ~theme' : ''}${s.reroll ? '  +re-roll' : ''}${s.regen ? '  +regen' : ''}${s.lab_pending ? '  +lab' : ''}`;
+  if (document.activeElement !== V.el.querySelector('[data-k=seed]')) V.el.querySelector('[data-k=seed]').value = String(s.seed);
+}
+
+// ---------------- sound (from docs/research/Congotronics line generator.html) ----------------
+let ac = null, master, revSend, kickBus, kickShaper, cache = {}, timer = null, playing = false;
+function makeTine(midi){
+  const sr = ac.sampleRate, f = 440 * Math.pow(2, (midi - 69) / 12), len = Math.floor(sr * 1.4);
+  const buf = ac.createBuffer(1, len, sr), y = buf.getChannelData(0);
+  const t1 = Math.max(.22, Math.min(.9, .9 - (midi - 45) * .016)), t2 = .035, f2 = 6.27 * f;
+  let nlp = 0, peak = 0;
+  for (let i = 0; i < len; i++) {
+    const t = i / sr, e1 = Math.exp(-t / t1);
+    const fund = Math.sin(2 * Math.PI * f * t) * e1;
+    const over = f2 < sr * .45 ? .38 * Math.sin(2 * Math.PI * f2 * t) * Math.exp(-t / t2) : 0;
+    const h2 = .14 * Math.sin(2 * Math.PI * 2 * f * t + .4) * Math.exp(-t / (t1 * .5));
+    nlp += .2 * ((Math.random() * 2 - 1) - nlp);
+    const buzz = .22 * Math.tanh(7 * fund) * (.55 + 2.2 * nlp) * Math.exp(-t / (t1 * .55));
+    const click = i < sr * .004 ? (Math.random() * 2 - 1) * .45 * (1 - i / (sr * .004)) : 0;
+    const atk = Math.min(1, i / (sr * .0008));
+    y[i] = atk * (fund + over + h2 + buzz) + click;
+    const m = Math.abs(y[i]); if (m > peak) peak = m;
+  }
+  const g = .9 / (peak || 1); for (let i = 0; i < len; i++) y[i] *= g;
+  return buf;
+}
+const getBuf = m => { m = Math.max(24, Math.min(110, Math.round(m))); return cache[m] || (cache[m] = makeTine(m)); };
+function driveCurve(a){ const k = 1 + a * 38, n = 2048, c = new Float32Array(n); for (let i = 0; i < n; i++) { const x = i / (n - 1) * 2 - 1; c[i] = Math.tanh(k * x) / Math.tanh(k); } return c; }
+function makeRoom(){
+  const sr = ac.sampleRate, len = Math.floor(sr * 1.2), ir = ac.createBuffer(2, len, sr);
+  for (let ch = 0; ch < 2; ch++) { const d = ir.getChannelData(ch); let lp = 0; for (let i = 0; i < len; i++) { lp += .35 * ((Math.random() * 2 - 1) - lp); d[i] = lp * Math.pow(1 - i / len, 3.4); } }
+  const conv = ac.createConvolver(); conv.buffer = ir; return conv;
+}
+function makeAmp(pan){
+  const input = ac.createGain(); input.gain.value = .8;
+  const sh = ac.createWaveShaper(); sh.oversample = '4x'; sh.curve = driveCurve(.45);
+  const post = ac.createGain(); post.gain.value = 1 / (1 + .45 * 1.6);
+  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 180;
+  const pk = ac.createBiquadFilter(); pk.type = 'peaking'; pk.frequency.value = 1700; pk.Q.value = 1.1; pk.gain.value = 5;
+  const lp = ac.createBiquadFilter(); lp.type = 'lowpass'; lp.Q.value = .7; lp.frequency.value = 3400;
+  const pn = ac.createStereoPanner(); pn.pan.value = pan;
+  input.connect(sh).connect(post).connect(hp).connect(pk).connect(lp).connect(pn);
+  pn.connect(master); pn.connect(revSend);
+  return input;
+}
+function initAudio(){
+  ac = new (window.AudioContext || window.webkitAudioContext)();
+  master = ac.createGain(); master.gain.value = +$('#vol').value * .5; master.connect(ac.destination);
+  const room = makeRoom(); revSend = ac.createGain(); revSend.gain.value = .14; revSend.connect(room).connect(master);
+  voices.forEach((V, i) => { V.amp = makeAmp(i ? .3 : -.3); V.cur = null; });
+  kickShaper = ac.createWaveShaper(); kickShaper.oversample = '2x'; kickShaper.curve = driveCurve(.18);
+  kickBus = ac.createGain(); kickShaper.connect(kickBus).connect(master);
+}
+// Velocity from the Out A gate level (5 V = 1.0); sustain = gate length.
+const velOf = accent => Math.max(0, (accent ? lab.accentV : lab.normalV) / 5);
+function pluck(V, t, midi, vel, len){
+  const src = ac.createBufferSource(), g = ac.createGain();
+  src.buffer = getBuf(midi);
+  g.gain.setValueAtTime(vel, t);
+  g.gain.setTargetAtTime(0, t + len, .012);
+  src.connect(g).connect(V.amp); src.start(t); src.stop(Math.min(t + src.buffer.duration, t + len + .2));
+  if (V.cur) { V.cur.g.gain.cancelScheduledValues(t); V.cur.g.gain.setTargetAtTime(0, t, .005); }
+  V.cur = {g};
+}
+const BELL = {12: [0,2,4,5,7,9,11], 16: [0,3,6,10,12]}, CLAVE = {16: [0,2,4,6,8,9,11,13,15], 12: [0,2,4,6,7,9,11]};
+const KICKS = {four: {12: [0,3,6,9], 16: [0,4,8,12]}, pickup: {12: [0,3,6,9,11], 16: [0,4,8,12,14]}, half: {12: [0,6], 16: [0,8]}, three: {12: [0,4,8], 16: [0,3,6,8,11,14]}};
+function kickAt(t, p, B){
+  const k = $('#kick').value; if (k === 'off' || !KICKS[k][B].includes(p)) return;
+  const lvl = .8 * (p === 0 ? 1 : .85), len = .32, pitch = 50;
+  const o = ac.createOscillator(), g = ac.createGain();
+  o.frequency.setValueAtTime(pitch * 3.2, t); o.frequency.exponentialRampToValueAtTime(pitch, t + .045);
+  g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(lvl, t + .002); g.gain.setTargetAtTime(0, t + .01, len / 3.5);
+  o.connect(g).connect(kickShaper); o.start(t); o.stop(t + len + .05);
+  const n = ac.createBufferSource(), nb = ac.createBuffer(1, Math.floor(ac.sampleRate * .012), ac.sampleRate), d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  n.buffer = nb; const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 2500;
+  const ng = ac.createGain(); ng.gain.value = lvl * .25; n.connect(hp).connect(ng).connect(kickBus); n.start(t);
+}
+function claveAt(t, p, B){
+  const m = $('#clave').value; if (m === 'off') return;
+  const hit = m === 'beat' ? p % (B / 4) === 0 : (m === 'bell' ? BELL : CLAVE)[B].includes(p);
+  if (!hit) return;
+  const lvl = .7 * (p === 0 ? .6 : .48), f0 = m === 'beat' ? 1500 : 2620;
+  for (const [r, a, d] of [[1, 1, .16], [1.006, .55, .14], [2.71, .45, .05], [5.1, .25, .02]]) {
+    if (f0 * r > ac.sampleRate * .45) continue;
+    const o = ac.createOscillator(), g = ac.createGain(); o.frequency.value = f0 * r;
+    g.gain.setValueAtTime(lvl * a, t); g.gain.exponentialRampToValueAtTime(.0001, t + d * 2.5);
+    o.connect(g).connect(master); o.start(t); o.stop(t + d * 2.5 + .01);
+  }
+  const n = ac.createBufferSource(), nb = ac.createBuffer(1, Math.floor(ac.sampleRate * .004), ac.sampleRate), d = nb.getChannelData(0);
+  for (let i = 0; i < d.length; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / d.length);
+  const hp = ac.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 5000;
+  const ng = ac.createGain(); ng.gain.value = lvl * .9; n.buffer = nb; n.connect(hp).connect(ng).connect(master); n.start(t);
+}
+const bpm = () => Math.max(20, Math.min(300, +$('#bpm').value || 82));
+// Each voice is clocked like TR1 from the internal clock: x4 per beat on the 16 grid, x3 on 12.
+function tick(){
+  voices.forEach((V, v) => {
+    while (V.nextTime < ac.currentTime + .12) {
+      const c = V.core, B = c.pulses_per_bar, dur = 60 / bpm() * 4 / B, t = V.nextTime, p = c.pulse_idx;
+      const ev = c.Pulse();
+      let gateEnd = V.pendGateEnd || 0;
+      if (ev.note) {
+        const len = dur * lab.gatePct / 100;
+        gateEnd = t + len;
+        if (!V.mute) pluck(V, t, K.kMidiAtZeroUnits + ev.pitch_units / K.kUnitsPerSemitone, velOf(ev.accent), len);
+      }
+      V.pendGateEnd = gateEnd;
+      if (v === 0) { kickAt(t, p, B); claveAt(t, p, B); }
+      V.snaps.push(snapshot(V, t, ev, gateEnd));
+      V.nextTime += dur;
+    }
+  });
+}
+async function togglePlay(){
+  if (!ac) initAudio();
+  if (ac.state === 'suspended') await ac.resume();
+  playing = !playing;
+  $('#play').textContent = playing ? 'Stop' : 'Play'; $('#play').classList.toggle('on', playing);
+  if (playing) {
+    const t0 = ac.currentTime + .06;
+    voices.forEach(V => { V.nextTime = t0; V.snaps = []; V.pendGateEnd = 0; V.gateEnd = 0; });
+    tick(); timer = setInterval(tick, 25);
+  } else {
+    clearInterval(timer);
+    voices.forEach((V, v) => { if (V.cur) V.cur.g.gain.setTargetAtTime(0, ac.currentTime, .02); V.snaps = []; V.gateEnd = 0; refreshIdle(v); });
+  }
+}
+function frameLoop(){
+  const now = ac ? ac.currentTime : 0;
+  voices.forEach(V => {
+    while (V.snaps.length && V.snaps[0].t <= now) {
+      const s = V.snaps.shift(); V.view = s;
+      if (s.ev && s.ev.note) { V.last = {degree: s.ev.degree, accent: s.ev.accent, ev: s.ev}; V.gateEnd = s.gateEnd; }
+      else if (s.ev && V.last) V.last.ev = s.ev;
+    }
+    render(V, now);
+  });
+  requestAnimationFrame(frameLoop);
+}
+
+// ---------------- lab table ----------------
+const PER = [   // [label, C++ name, getter/setter path, min, max, step, kind]
+  ['Step weight +1', 'kStepWeight[0]', ['stepW', 0], 0, 255],
+  ['Step weight −1', 'kStepWeight[1]', ['stepW', 1], 0, 255],
+  ['Step weight 0',  'kStepWeight[2]', ['stepW', 2], 0, 255],
+  ['Step weight +2', 'kStepWeight[3]', ['stepW', 3], 0, 255],
+  ['Step weight −2', 'kStepWeight[4]', ['stepW', 4], 0, 255],
+  ['Thumb L start key', 'GenThumb k (no constant yet; lowest = firmware)', ['lStart'], null],
+  ['Mutation: key',    'kMutWeight[kMutKey]',    ['mutW', 0], 0, 255],
+  ['Mutation: rest',   'kMutWeight[kMutRest]',   ['mutW', 1], 0, 255],
+  ['Mutation: octave', 'kMutWeight[kMutOctave]', ['mutW', 2], 0, 255],
+  ['Mutation: loop length', 'kMutWeight[kMutLoop]', ['mutW', 3], 0, 255],
+  ['Return to theme % (× Var)', 'kReturnToThemePct', ['ret'], 0, 100],
+  ['Loop-length change % at new passage', 'kLoopChangePct', ['loopChange'], 0, 100],
+  ['Octave headroom (degrees)', 'kOctaveHeadroom', ['headroom'], 0, 10],
+];
+const GLOB = [
+  ['Gate accent (V) → velocity', 'kGateAccentUnits', 'accentV', 0, 6, .1],
+  ['Gate normal (V) → velocity', 'kGateNormalUnits', 'normalV', 0, 6, .1],
+  ['Gate length % of pulse', 'kGateLengthPct', 'gatePct', 1, 100, 1],
+];
+const getP = (part, path) => path.length === 2 ? lab.parts[part][path[0]][path[1]] : lab.parts[part][path[0]];
+const setP = (part, path, v) => { if (path.length === 2) lab.parts[part][path[0]][path[1]] = v; else lab.parts[part][path[0]] = v; };
+function buildLab(){
+  let h = `<tr><th>Constant</th><th>C++</th>${K.kPartNames.map(n => `<th>${n}</th>`).join('')}</tr>`;
+  PER.forEach((r, i) => {
+    h += `<tr><td>${r[0]}</td><td><code>${r[1]}</code></td>` + [0,1,2,3].map(p => r[3] === null
+      ? `<td><select data-per="${i}" data-part="${p}"><option value="lowest">lowest</option><option value="middle">middle</option></select></td>`
+      : `<td><input type="number" min="${r[3]}" max="${r[4]}" step="1" data-per="${i}" data-part="${p}"></td>`).join('') + '</tr>';
+  });
+  GLOB.forEach((r, i) => { h += `<tr><td>${r[0]} <em class="muted">live</em></td><td><code>${r[1]}</code></td><td colspan="4"><input type="number" min="${r[3]}" max="${r[4]}" step="${r[5]}" data-glob="${i}"> <span class="muted" data-gv="${i}"></span></td></tr>`; });
+  $('#lab').innerHTML = h;
+  $('#lab').addEventListener('change', e => {
+    const el = e.target;
+    if (el.dataset.per) {
+      const r = PER[+el.dataset.per]; let v = el.value;
+      if (r[3] !== null) { v = Math.max(r[3], Math.min(r[4], Math.round(+v || 0))); el.value = v; }
+      setP(+el.dataset.part, r[2], v);
+    } else if (el.dataset.glob) {
+      const r = GLOB[+el.dataset.glob]; let v = Math.max(r[3], Math.min(r[4], +el.value || 0));
+      el.value = v; lab[r[2]] = v;
+    } else return;
+    pushLab(); syncLab();
+  });
+  syncLab();
+}
+function syncLab(){
+  document.querySelectorAll('[data-per]').forEach(el => { el.value = getP(+el.dataset.part, PER[+el.dataset.per][2]); });
+  document.querySelectorAll('[data-glob]').forEach(el => { el.value = lab[GLOB[+el.dataset.glob][2]]; });
+  $('[data-gv="0"]').textContent = `velocity ${(velOf(true)).toFixed(2)}`;
+  $('[data-gv="1"]').textContent = `velocity ${(velOf(false)).toFixed(2)}`;
+  $('[data-gv="2"]').textContent = '';
+}
+function pushLab(){   // engine constants at the next bar line (immediately when stopped)
+  voices.forEach((V, v) => { if (playing) V.core.setLab(lab); else { V.core.lab = E.cloneLab(lab); V.core.labPending = null; refreshIdle(v); } });
+}
+function exportConstants(){
+  const parts = K.kPartNames, out = ['// likembe_constants.h -- values from the Likembe browser lab'];
+  const arr = a => `{${a.join(', ')}}`;
+  const same = f => parts.every((_, p) => JSON.stringify(f(p)) === JSON.stringify(f(0)));
+  const emit = (decl, dims, f, comment) => {
+    if (same(f)) out.push(`constexpr ${decl}${dims} = ${Array.isArray(f(0)) ? arr(f(0)) : f(0)};${comment ? '  // ' + comment : ''}`);
+    else {
+      out.push(`// per part (${parts.join(', ')}): the core has one global value -- needs a per-part table in the core`);
+      out.push(`constexpr ${decl}[kPartCount]${dims} = {${parts.map((_, p) => Array.isArray(f(p)) ? arr(f(p)) : f(p)).join(', ')}};`);
+    }
+  };
+  emit('uint8_t kStepWeight', '[5]', p => lab.parts[p].stepW, '+1, -1, 0, +2, -2');
+  emit('uint8_t kMutWeight', '[4]', p => lab.parts[p].mutW, 'key, rest, octave, loop length');
+  emit('uint8_t kOctaveHeadroom', '', p => lab.parts[p].headroom);
+  emit('uint8_t kReturnToThemePct', '', p => lab.parts[p].ret);
+  emit('uint8_t kLoopChangePct', '', p => lab.parts[p].loopChange);
+  const ls = parts.map((n, p) => `${n} ${lab.parts[p].lStart}`).join(', ');
+  out.push(parts.every((_, p) => lab.parts[p].lStart === 'lowest')
+    ? '// thumb L start key: lowest (GenThumb k = 0, unchanged)'
+    : `// thumb L start key (no constant yet; GenThumb k = 0 for lowest, c / 2 for middle): ${ls}`);
+  const units = v => Number.isInteger(v) ? `${v} * 1536` : String(Math.round(v * UNITS_PER_VOLT));
+  out.push(`constexpr int kGateAccentUnits = ${units(lab.accentV)};    // ${FMT.volt(lab.accentV)} on accented notes`);
+  out.push(`constexpr int kGateNormalUnits = ${units(lab.normalV)};    // ${FMT.volt(lab.normalV)} on other notes`);
+  out.push(`constexpr uint32_t kGateLengthPct = ${lab.gatePct};       // gate length = % of measured pulse interval`);
+  const o = $('#exportOut'); o.hidden = false; o.textContent = out.join('\n');
+}
+
+// ---------------- dump ----------------
+function dumpVoice(v){
+  const V = voices[v], p = V.core.params, labNow = playing && V.core.labPending ? V.core.labPending : V.core.lab;
+  const args = `--seed ${p.seed} --part ${p.part} --dens ${p.density_pct} --root ${p.root} --oct ${p.octave} --grid ${p.grid16 ? 16 : 12} --var ${p.variation_pct} --pass ${p.passage_idx} --bars ${V.dumpBars}`;
+  const fw = JSON.stringify(labNow.parts[p.part]) === JSON.stringify(E.labDefaults().parts[p.part]);   // velocities/gate do not affect events
+  const o = $('#dumpOut'); o.hidden = false;
+  o.textContent = `# voice ${v + 1}: ${args}${fw ? '' : '  (lab values differ from firmware: C++ tool will not match)'}\n` + E.dump(p, V.dumpBars, labNow);
+}
+
+// ---------------- wiring ----------------
+voices.forEach((_, v) => buildVoiceUI(v));
+buildLab();
+voices.forEach((_, v) => refreshIdle(v));
+$('#play').onclick = togglePlay;
+$('#vol').oninput = () => { if (master) master.gain.setTargetAtTime(+$('#vol').value * .5, ac.currentTime, .02); };
+$('#restart').onclick = () => voices.forEach((V, v) => { V.core.Init(V.core.params); V.last = null; V.snaps = []; syncVoiceUI(v); refreshIdle(v); });
+$('#labReset').onclick = () => { lab = E.labDefaults(); pushLab(); syncLab(); };
+$('#export').onclick = exportConstants;
+requestAnimationFrame(frameLoop);
+})();
+</script>
+</body>
+</html>
