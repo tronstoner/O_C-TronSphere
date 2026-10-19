@@ -77,7 +77,9 @@ constexpr uint8_t kLoopChangePct = 40;        // loop-length change at a new pas
 constexpr uint8_t kEnergyBuildPct = 0;        // not in MVP (unused)
 
 // ---- Parameters ----
-constexpr uint8_t kDensityMin = 30, kDensityMax = 100;
+constexpr uint8_t kDensityMin = 0, kDensityMax = 100;
+constexpr int8_t kOctaveMin = -2, kOctaveMax = 3;   // Oct parameter (octave offset)
+constexpr int8_t kDefaultOctave = 0;
 constexpr uint8_t kVariationMax = 100;
 constexpr int kDensityCvRange = 35;          // CV1: percent points at +-3 V (HEMISPHERE_3V_CV)
 constexpr uint8_t kPassageBars[] = {0, 8, 16, 24, 32, 48, 64};   // 0 = Off (manual only)

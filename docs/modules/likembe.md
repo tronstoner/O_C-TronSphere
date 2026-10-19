@@ -2,7 +2,7 @@
 
 **Status:** core + glue implemented, host-tested and sim-verified (`custom/core/likembe_core.h`,
 `custom/applets/Likembe.h`, `host/tests/test_likembe_core.cpp`); **not yet verified on hardware**.
-Applet ID **201**, name `Likembe`, category Sequencer (0x02). Flash cost +4 872 B, RAM +272 B.
+Applet ID **201**, name `Likembe`, category Sequencer (0x02). Flash cost +5 040 B, RAM +272 B.
 Plan and open questions: `likembe-impl-plan.md`.
 Spec: `docs/research/Likembe pattern engine technical concept.md`; JS reference:
 `docs/research/Congotronics line generator.html`.
@@ -25,7 +25,7 @@ this module.
 |---|---|
 | TR1 | Pulse clock: one pulse = one grid pulse (16th on the 16 grid, triplet 8th on the 12 grid) |
 | TR2 | Re-roll: new seed + new passage, applied at the next bar line |
-| CV1 | Density modulation, bipolar: ±3 V (`HEMISPHERE_3V_CV`) = ±35 percent points (`kDensityCvRange`), added to Density, effective value clamped to `kDensityMin`..`kDensityMax`; read every tick (one multiply/divide by constant) |
+| CV1 | Density modulation, bipolar: ±3 V (`HEMISPHERE_3V_CV`) = ±35 percent points (`kDensityCvRange`), added to Density, effective value clamped to 0..100 %; read every tick (one multiply/divide by constant) |
 | CV2 | Unassigned (open question) |
 | Out A | Trigger per note (no trigger on rests) |
 | Out B | Pitch CV, 1 V/oct, 0 V = C2 (`kMidiAtZeroUnits`); held through rests |
@@ -41,13 +41,16 @@ toggles edit mode; in edit mode the encoder changes the value. Order = user prio
 
 | Cursor | Parameter | Range | Default | Step | Takes effect |
 |---|---|---|---|---|---|
-| 1 `Dens` | Density | 30–100 % | per part (`kParts[].density_pct`, Bass 85) | 5 % | immediately; display shows the effective value incl. CV1 |
+| 1 `Dens` | Density | 0–100 % | per part (`kParts[].density_pct`, Bass 85) | 5 % | immediately; display shows the effective value incl. CV1 |
 | 2 `Part` | Part | Bass, Lead, MiSol, Solo | Bass | 1 | next bar line (regenerates from seed with the part's default loops); Density/Var keep the user's values (no per-part default reload) |
 | 3 `Root` | Root (lowest key) | C..B, wraps | E (`kDefaultRoot`) | 1 semitone | immediately |
-| 4 `Grid` | Pulses per bar | 16 / 12 (right = 16, left = 12) | 16 | — | next bar line (regenerates) |
-| 5 `Var` | Variation rate | 0–100 % (= 0–1 mutations per bar) | per part (Bass 8) | 5 % | immediately |
-| 6 `Pass` | Passage length | Off, 8, 16, 24, 32, 48, 64 bars; shows `len:bar` | Off | — | immediately |
-| 7 `Seed` | Seed | 0–65535 (decimal) | 1 | any turn in edit mode = new random seed | **immediately** (`RerollNow`); TR2 re-roll waits for the bar line |
+| 4 `Oct` | Octave offset (shifts all pitches by 12·Oct semitones) | −2…+3, shown `Oct +1` / `Oct 0` / `Oct -2` | 0 | 1 octave | immediately |
+| 5 `Grid` | Pulses per bar | 16 / 12 (right = 16, left = 12) | 16 | — | next bar line (regenerates) |
+| 6 `Var` | Variation rate | 0–100 % (= 0–1 mutations per bar) | per part (Bass 8) | 5 % | immediately |
+| 7 `Pass` | Passage length | Off, 8, 16, 24, 32, 48, 64 bars; shows `len:bar` | Off | — | immediately |
+| 8 `Seed` | Seed | 0–65535 (decimal) | 1 | any turn in edit mode = new random seed | **immediately** (`RerollNow`); TR2 re-roll waits for the bar line |
+
+Element 0 of each thumb never rests, so at 0 % density each thumb plays only its first element, once per pass through its loop.
 
 Unused/fixed (constants): Tuning (pentatonic only, `kTuningCount`), return to theme
 `kReturnToThemePct`, loop change `kLoopChangePct`, energy build `kEnergyBuildPct` (0),
@@ -78,21 +81,22 @@ regeneration, pending re-roll, passage end, or variation) inside the call that e
 ## Pitch mapping
 
 `pitch_units = (midi - kMidiAtZeroUnits) * kUnitsPerSemitone`, clamped to
-0..`kMaxPitchUnits` (6 V). Bass A2 = 1152 (0.75 V), lead A3 = 2688 (1.75 V). Degree →
-MIDI per spec: `base + 12*floor(d/n) + offset[d mod n]`, base = root pitch class nearest
+0..`kMaxPitchUnits` (6 V); a large Oct offset simply clamps there. Bass A2 = 1152 (0.75 V), lead A3 = 2688 (1.75 V). Degree →
+MIDI per spec: `base + 12*(floor(d/n) + Oct) + offset[d mod n]`, base = root pitch class nearest
 the anchor (−5..+6 semitones).
 
-## Persistence (`Pack()`/`Unpack()`, settings only, 40 of 64 bits)
+## Persistence (`Pack()`/`Unpack()`, settings only, 43 of 64 bits)
 
 | Bits | Field | Validation |
 |---|---|---|
-| 0–6 | density_pct | clamp 30..100 |
+| 0–6 | density_pct | clamp ≤ 100 |
 | 7–8 | part | ≥ 4 → Bass (2 bits, always valid) |
 | 9–12 | root | clamp ≤ 11 |
 | 13 | grid16 | — |
 | 14–20 | variation_pct | clamp ≤ 100 |
 | 21–23 | passage_idx | clamp ≤ 6 |
 | 24–39 | seed | — |
+| 40–42 | octave + 2 (0..5 = −2..+3) | 6, 7 clamp to +3 |
 
 Unpack regenerates everything from the seed (evolving state is not persisted).
 
@@ -101,7 +105,7 @@ Unpack regenerates everything from the seed (evolving state is not persisted).
 `kUnitsPerSemitone`, `kUnitsPerOctave`, `kMidiAtZeroUnits`, `kMaxPitchUnits`, `kTunings`,
 `kTuningCount`, `kGrid16`, `kGrid12`, `kMinLoop`, `kMaxLoop`, `kParts`, `kStepDelta`,
 `kStepWeight`, `kMutWeight`, `kOctaveHeadroom`, `kReturnToThemePct`, `kLoopChangePct`,
-`kEnergyBuildPct`, `kDensityMin`, `kDensityMax`, `kDensityCvRange`, `kVariationMax`, `kPassageBars`,
+`kEnergyBuildPct`, `kDensityMin` (0), `kDensityMax`, `kOctaveMin`, `kOctaveMax`, `kDefaultOctave`, `kDensityCvRange`, `kVariationMax`, `kPassageBars`,
 `kDefaultPassageIdx`, `kDefaultRoot`, `kDefaultGrid16`, `kDefaultSeed`,
 `kPartStreamOffset`, `kPassageStreamOffset`, `kSeedMix`, `kSeedNonZero`.
 
@@ -117,4 +121,4 @@ Unpack regenerates everything from the seed (evolving state is not persisted).
 | 52–62 | Contour | degree per sounding pulse of this bar (2×2 dots joined by dotted lines), scaled to the part's range |
 | 52, x 58 | Status | blinking `*` = re-roll pending (next bar line); `~` = figures differ from the passage theme |
 
-Verified screenshots: `host/build/out/lk3_*/ui_001_oled_x6.png` (sim, not hardware).
+Verified screenshots: `host/build/out/lk3_*/ui_001_oled_x6.png`, `host/build/out/lk5/` (Oct +1), `host/build/out/lk5d/` (Dens 0 %) (sim, not hardware).

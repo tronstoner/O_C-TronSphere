@@ -13,9 +13,10 @@
 namespace custom {
 
 struct LikembeParams {
-  uint8_t density_pct;    // kDensityMin..kDensityMax
+  uint8_t density_pct;    // 0..100
   uint8_t part;           // likembe::Part
   uint8_t root;           // pitch class 0..11 (lowest key)
+  int8_t octave;          // octave offset kOctaveMin..kOctaveMax
   uint8_t grid16;         // 1 = 16 pulses per bar, 0 = 12
   uint8_t variation_pct;  // 0..100 = 0..1 mutations per bar
   uint8_t passage_idx;    // index into kPassageBars (0 = Off)
@@ -28,6 +29,7 @@ struct LikembeParams {
     p.density_pct = kParts[part].density_pct;
     p.part = part;
     p.root = kDefaultRoot;
+    p.octave = kDefaultOctave;
     p.grid16 = kDefaultGrid16;
     p.variation_pct = kParts[part].variation_pct;
     p.passage_idx = kDefaultPassageIdx;
@@ -37,10 +39,11 @@ struct LikembeParams {
 
   void Clamp() {
     using namespace likembe;
-    if (density_pct < kDensityMin) density_pct = kDensityMin;
     if (density_pct > kDensityMax) density_pct = kDensityMax;
     if (part >= kPartCount) part = kPartBass;
     if (root > 11) root = 11;
+    if (octave < kOctaveMin) octave = kOctaveMin;
+    if (octave > kOctaveMax) octave = kOctaveMax;
     grid16 = grid16 ? 1 : 0;
     if (variation_pct > kVariationMax) variation_pct = kVariationMax;
     if (passage_idx >= kPassageCount) passage_idx = kPassageCount - 1;
@@ -89,7 +92,7 @@ struct LikembeCore {
     Regenerate();
   }
 
-  // Live changes. Density, variation, passage length: immediate. Root: pitch
+  // Live changes. Density, variation, passage length: immediate. Root, octave: pitch
   // mapping immediate (figures are degrees). Grid, part, seed: full
   // regeneration from the seed at the next bar line.
   void SetParams(const LikembeParams& p) {
@@ -104,7 +107,7 @@ struct LikembeCore {
 
   uint8_t EffectiveDensity() const {
     int d = (int)params.density_pct + density_mod;
-    if (d < likembe::kDensityMin) d = likembe::kDensityMin;
+    if (d < 0) d = 0;
     if (d > likembe::kDensityMax) d = likembe::kDensityMax;
     return (uint8_t)d;
   }
@@ -161,6 +164,7 @@ struct LikembeCore {
   // Persistence (settings only). Bit layout, LSB first:
   //  0..6 density_pct (7)  7..8 part (2)  9..12 root (4)  13 grid16 (1)
   // 14..20 variation_pct (7) 21..23 passage_idx (3) 24..39 seed (16)
+  // 40..42 octave - kOctaveMin (3; 6, 7 clamp to +3)
   uint64_t Pack() const {
     uint64_t d = 0;
     d |= (uint64_t)(params.density_pct & 0x7F);
@@ -170,6 +174,7 @@ struct LikembeCore {
     d |= (uint64_t)(params.variation_pct & 0x7F) << 14;
     d |= (uint64_t)(params.passage_idx & 0x7) << 21;
     d |= (uint64_t)params.seed << 24;
+    d |= (uint64_t)((params.octave - likembe::kOctaveMin) & 0x7) << 40;
     return d;
   }
   static LikembeParams UnpackParams(uint64_t d) {
@@ -181,6 +186,7 @@ struct LikembeCore {
     p.variation_pct = (uint8_t)((d >> 14) & 0x7F);
     p.passage_idx = (uint8_t)((d >> 21) & 0x7);
     p.seed = (uint16_t)((d >> 24) & 0xFFFF);
+    p.octave = (int8_t)(((d >> 40) & 0x7) + likembe::kOctaveMin);
     p.Clamp();
     return p;
   }
@@ -194,7 +200,7 @@ struct LikembeCore {
     int n = tu.n;
     int oct = degree >= 0 ? degree / n : -((-degree + n - 1) / n);
     int idx = degree - oct * n;
-    int midi = base_midi + 12 * oct + tu.off[idx];
+    int midi = base_midi + 12 * (oct + params.octave) + tu.off[idx];
     int u = (midi - likembe::kMidiAtZeroUnits) * likembe::kUnitsPerSemitone;
     if (u < 0) u = 0;
     if (u > likembe::kMaxPitchUnits) u = likembe::kMaxPitchUnits;

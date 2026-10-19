@@ -52,6 +52,7 @@ public:
       case kCurDensity: p.density_pct = (uint8_t)constrain(p.density_pct + direction * kDensityStep, kDensityMin, kDensityMax); break;
       case kCurPart:    p.part = (uint8_t)constrain(p.part + direction, 0, kPartCount - 1); break;
       case kCurRoot:    p.root = (uint8_t)((p.root + 12 + direction) % 12); break;
+      case kCurOct:     p.octave = (int8_t)constrain(p.octave + direction, kOctaveMin, kOctaveMax); break;
       case kCurGrid:    p.grid16 = direction > 0 ? 1 : 0; break;
       case kCurVar:     p.variation_pct = (uint8_t)constrain(p.variation_pct + direction * kVarStep, 0, kVariationMax); break;
       case kCurPassage: p.passage_idx = (uint8_t)constrain(p.passage_idx + direction, 0, kPassageCount - 1); break;
@@ -81,7 +82,7 @@ protected:
   }
 
 private:
-  enum Cursor { kCurDensity, kCurPart, kCurRoot, kCurGrid, kCurVar, kCurPassage, kCurSeed };
+  enum Cursor { kCurDensity, kCurPart, kCurRoot, kCurOct, kCurGrid, kCurVar, kCurPassage, kCurSeed };
   static constexpr int kCursorLast = kCurSeed;
   static constexpr int kDensityStep = 5;
   static constexpr int kVarStep = 5;
@@ -103,7 +104,7 @@ private:
   int CellW() const { return 64 / core.pulses_per_bar; }   // 4 (16) or 5 (12)
 
   void DrawParam() {
-    static const char* const kNames[] = {"Dens", "Part", "Root", "Grid", "Var", "Pass", "Seed"};
+    static const char* const kNames[] = {"Dens", "Part", "Root", "Oct", "Grid", "Var", "Pass", "Seed"};
     static const char* const kParts[] = {"Bass", "Lead", "MiSol", "Solo"};
     static const char* const kNotes[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
     const custom::LikembeParams& p = core.params;
@@ -114,6 +115,7 @@ private:
       case kCurDensity: gfxPrint(core.EffectiveDensity()); gfxPrint("%"); break;
       case kCurPart:    gfxPrint(kParts[p.part]); break;
       case kCurRoot:    gfxPrint(kNotes[p.root]); break;
+      case kCurOct:     if (p.octave > 0) gfxPrint("+"); gfxPrint(p.octave); break;
       case kCurGrid:    gfxPrint(p.grid16 ? 16 : 12); break;
       case kCurVar:     gfxPrint(p.variation_pct); gfxPrint("%"); break;
       case kCurPassage:

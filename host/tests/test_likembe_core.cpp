@@ -114,7 +114,7 @@ TEST(element0_never_rests) {
   for (uint8_t part = 0; part < lk::kPartCount; ++part)
     for (uint16_t seed = 1; seed < 60; ++seed) {
       LikembeCore c = Make(part, seed);
-      c.params.density_pct = lk::kDensityMin; c.params.variation_pct = 100;
+      c.params.density_pct = 0; c.params.variation_pct = 100;
       for (int bar = 0; bar < 20; ++bar) {
         for (int i = 0; i < c.pulses_per_bar; ++i) {
           LikembeEvent e = c.Pulse();
@@ -172,14 +172,14 @@ static int CountNotes(uint8_t part, uint8_t density, int bars) {
 TEST(density_statistics) {
   bool ok = true;
   for (uint8_t part = 0; part < lk::kPartCount; ++part) {
-    int lo = CountNotes(part, 30, 16), mid = CountNotes(part, 65, 16), hi = CountNotes(part, 100, 16);
+    int lo = CountNotes(part, 0, 16), mid = CountNotes(part, 65, 16), hi = CountNotes(part, 100, 16);
     int off = lk::kParts[part].offset;
     CHECK(lo < mid && mid < hi);
     CHECK(hi == 20 * 16 * (16 - off));
   }
   // CV mod: effective density clamps, and lowers note count live.
   LikembeCore c = Make(lk::kPartLead, 3);
-  c.SetDensityMod(-100); CHECK(c.EffectiveDensity() == lk::kDensityMin);
+  c.SetDensityMod(-100); CHECK(c.EffectiveDensity() == 0);
   c.SetDensityMod(100); CHECK(c.EffectiveDensity() == lk::kDensityMax);
   return ok;
 }
@@ -290,7 +290,20 @@ TEST(pitch_mapping_and_range) {
   CHECK(c.PitchUnits(0) == 1152);
   p = LikembeParams::Defaults(lk::kPartLead); p.root = 9; c.Init(p);
   CHECK(c.PitchUnits(0) == 2688);
-  // Every part, every root: lowest and highest reachable degree inside 0..6 V unclamped.
+  // Oct shifts by 1536 units per octave; big offsets simply clamp to 0..kMaxPitchUnits.
+  p = LikembeParams::Defaults(lk::kPartBass); p.root = 9; c.Init(p);
+  for (int o = -1; o <= 3; ++o) {
+    p.octave = (int8_t)o; c.SetParams(p);
+    int want = 1152 + 1536 * o;
+    if (want < 0) want = 0;
+    if (want > lk::kMaxPitchUnits) want = lk::kMaxPitchUnits;
+    CHECK(c.PitchUnits(0) == want);
+  }
+  p.octave = -2; c.SetParams(p); CHECK(c.PitchUnits(0) == 0);     // A2 - 2 oct < C2 -> 0
+  p = LikembeParams::Defaults(lk::kPartSolo); p.octave = 3; c.Init(p);
+  CHECK(c.PitchUnits(c.key_hi) == lk::kMaxPitchUnits);              // clamps at 6 V
+  p.octave = 0;
+  // Every part, every root, Oct 0: lowest and highest reachable degree inside 0..6 V unclamped.
   for (uint8_t part = 0; part < lk::kPartCount; ++part)
     for (uint8_t root = 0; root < 12; ++root) {
       p = LikembeParams::Defaults(part); p.root = root; c.Init(p);
@@ -306,19 +319,26 @@ TEST(pitch_mapping_and_range) {
 
 TEST(pack_unpack) {
   bool ok = true;
-  LikembeParams p; p.density_pct = 77; p.part = 3; p.root = 11; p.grid16 = 0;
+  LikembeParams p; p.density_pct = 77; p.part = 3; p.root = 11; p.octave = -2; p.grid16 = 0;
   p.variation_pct = 100; p.passage_idx = 6; p.seed = 0xBEEF;
   LikembeCore a; a.Init(p);
   uint64_t d = a.Pack();
-  CHECK(d >> 40 == 0);
+  CHECK(d >> 43 == 0);
   LikembeCore b; b.Unpack(d);
   CHECK(std::memcmp(&a.params, &b.params, sizeof p) == 0);
   CHECK(LikembeCore::SameFigures(a.thumb, b.thumb));
   // garbage
   LikembeParams g = LikembeCore::UnpackParams(~0ull);
-  CHECK(g.density_pct == 100 && g.root == 11 && g.variation_pct == 100 && g.passage_idx == lk::kPassageCount - 1);
+  CHECK(g.density_pct == 100 && g.octave == lk::kOctaveMax && g.root == 11 && g.variation_pct == 100 && g.passage_idx == lk::kPassageCount - 1);
   g = LikembeCore::UnpackParams(0);
-  CHECK(g.density_pct == lk::kDensityMin);
+  CHECK(g.density_pct == 0 && g.octave == lk::kOctaveMin);
+  for (int o = lk::kOctaveMin; o <= lk::kOctaveMax; ++o) {
+    p.octave = (int8_t)o; a.Init(p);
+    CHECK(LikembeCore::UnpackParams(a.Pack()).octave == o);
+  }
+  // Clamp() on garbage octave values
+  p.octave = 100; p.Clamp(); CHECK(p.octave == lk::kOctaveMax);
+  p.octave = -100; p.Clamp(); CHECK(p.octave == lk::kOctaveMin);
   LikembeCore z; z.Unpack(0xDEADBEEFCAFEF00Dull);
   CHECK(z.thumb[0].n >= 2 && z.thumb[0].n != z.thumb[1].n);
   std::printf("  sizeof(LikembeCore) = %zu\n", sizeof(LikembeCore));

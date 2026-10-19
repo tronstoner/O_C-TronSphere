@@ -10,18 +10,19 @@ Reference: `docs/research/Congotronics line generator.html` (pattern logic porte
 3. [x] Glue `custom/applets/Likembe.h` (ID 201, I/O, cursor controls, Pack/Unpack).
 4. [x] Visualization (pulse row + cursor, two thumb loops with current element, contour, status).
 5. [x] Sim verification (`task host:sim`, `task host:ui --headless` screenshots).
-6. [ ] Hardware: flash, clock from TR1, tune provisional profiles by ear, `task size` delta.
+6. [x] Density 0–100 % (no floor); `Oct` parameter −2…+3 after Root, persisted in bits 40–42.
+7. [ ] Hardware: flash, clock from TR1, tune provisional profiles by ear, `task size` delta.
 
 ## API (as implemented, namespace `custom`)
 
 ```cpp
-struct LikembeParams { uint8_t density_pct, part, root, grid16, variation_pct, passage_idx; uint16_t seed;
+struct LikembeParams { uint8_t density_pct, part, root; int8_t octave; uint8_t grid16, variation_pct, passage_idx; uint16_t seed;
   static LikembeParams Defaults(uint8_t part); void Clamp(); };
 struct LikembeEvent { bool note; uint8_t degree; int16_t pitch_units; bool accent; uint8_t thumb; };
 struct LikembeCore {
   void Init(const LikembeParams&);        // regenerate from seed
-  void SetParams(const LikembeParams&);   // density/variation/passage/root immediate; grid/part/seed -> regen at bar line
-  void SetDensityMod(int8_t pct_delta);   // CV1, effective clamped 30..100
+  void SetParams(const LikembeParams&);   // density/variation/passage/root/octave immediate; grid/part/seed -> regen at bar line
+  void SetDensityMod(int8_t pct_delta);   // CV1, effective clamped 0..100
   uint8_t EffectiveDensity() const;
   LikembeEvent Pulse();                   // play one pulse, bar-line work on wrap
   LikembeEvent EventAt(uint8_t i) const;  // event of pulse i of the current bar (display)
@@ -86,12 +87,12 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 - Out A triggers only on clock pulses (max deviation 0.12 ms = tick jitter); every Out B change coincides with an Out A trigger (0 exceptions).
 - Bass default (85 %): 14 notes / 16 pulses per bar.
 - `--trig 2@3.0` (bar 2): rhythm and pitches change exactly at the start of bar 3 (t = 4.8 s), not before.
-- `--in0 -4608` (−3 V → 30 %): 9–10 notes per bar.
+- `--in0 -4608` (−3 V: 85 − 35 = 50 %): 9–10 notes per bar.
+- 2026-10-19, Bass at 0 % (16 grid, loops 4/3): expected L 2 + R 8/3 = 14 notes per 3 bars; observed 5, 5, 4 per bar = 14, and 56 in 12 bars.
 
 ## Open questions for the user
 
 1. Re-roll at next bar line (implemented default) vs immediate (`RerollNow()` exists)?
-2. Density floor 30 % (spec) vs 0 % for CV1 (silence possible)?
 3. CV2: variation-rate modulation, re-roll gate, or root transpose? (currently unassigned)
 7. Part change: reload the part's default Density/Var, or keep the user's values (current)?
 8. Seed edit: random new seed per turn (current) vs stepping the seed number?
