@@ -84,6 +84,16 @@ struct LikembeCore {
   int16_t base_midi = 45;     // MIDI of degree 0
   uint8_t key_lo = 0, key_hi = 8; // part degree range
   uint8_t active_part = 0;    // part the current figures were generated for (params.part may be pending)
+  // Realignment cycle: both thumbs and the bar line coincide again after
+  // cycle_bars = lcm(2*nL, 2*nR, pulses_per_bar) / pulses_per_bar bars (the
+  // part's start offset shifts both thumbs equally, so it does not change N).
+  // cycle_bar_idx = bar playing now, 1..cycle_bars. Restarts at 1 on Reset(),
+  // whenever figures are (re)generated (GenPart: Init, grid/part/seed change,
+  // re-roll, new passage -- phases restart at 0) and when a mutation changes a
+  // loop length; otherwise advances at every bar line and wraps N -> 1.
+  uint8_t cycle_bars = 1;
+  uint8_t cycle_bar_idx = 1;
+  uint8_t cycle_n[2] = {0, 0}; // loop lengths cycle_bars was computed for
 
   // ---------------- API ----------------
   void Init(const LikembeParams& p) {
@@ -157,6 +167,25 @@ struct LikembeCore {
     pulse_idx = 0; bar_in_passage = 0;
     thumb[0].phase = thumb[1].phase = 0;
     theme[0].phase = theme[1].phase = 0;
+    SyncCycle(true);
+  }
+
+  static uint32_t Gcd(uint32_t a, uint32_t b) { while (b) { uint32_t t = a % b; a = b; b = t; } return a; }
+  static uint32_t Lcm(uint32_t a, uint32_t b) { return a / Gcd(a, b) * b; }
+  // Bars until both thumbs realign with the bar line.
+  static uint32_t CycleBars(uint8_t nl, uint8_t nr, uint8_t ppb) {
+    return Lcm(Lcm(2u * nl, 2u * nr), ppb) / ppb;
+  }
+  // Called once per bar line (after the bar's work) and on (re)generation / Reset.
+  void SyncCycle(bool restart) {
+    if (restart || thumb[0].n != cycle_n[0] || thumb[1].n != cycle_n[1]) {
+      cycle_n[0] = thumb[0].n; cycle_n[1] = thumb[1].n;
+      uint32_t n = CycleBars(thumb[0].n, thumb[1].n, pulses_per_bar);
+      cycle_bars = (uint8_t)(n > 255u ? 255u : n);
+      cycle_bar_idx = 1;
+    } else if (++cycle_bar_idx > cycle_bars) {
+      cycle_bar_idx = 1;
+    }
   }
 
   bool ThemeDiffers() const { return !SameFigures(thumb, theme); }
@@ -307,6 +336,7 @@ struct LikembeCore {
     GenThumb(1, thumb[1].n);
     theme[0] = thumb[0]; theme[1] = thumb[1];
     bar_in_passage = 0;
+    SyncCycle(true);
   }
 
   void Regenerate() {   // everything from the seed (Init, grid/part/seed change)
@@ -442,6 +472,7 @@ struct LikembeCore {
     uint8_t len = likembe::kPassageBars[params.passage_idx];
     if (len && bar_in_passage >= len) { NewPassage(false); return; }
     Evolve();
+    SyncCycle(false);
   }
 };
 

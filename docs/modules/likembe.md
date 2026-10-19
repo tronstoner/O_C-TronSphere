@@ -116,9 +116,12 @@ Unpack regenerates everything from the seed (evolving state is not persisted).
 | 14 | `Name value` | selected parameter; underline cursor (blinks), inverted in edit mode |
 | 25–30 | Pulse row | this bar's pulses (`EventAt`), 4 px cells (16 grid) / 5 px (12 grid): tall bar = accented note (element 0 of a thumb), short bar = note, dot = rest or offset pulse |
 | 32–33 | Pulse cursor | block under the next pulse to play |
-| 36–41 | `L` + n cells | left thumb loop (cells from x 7, 2 px right margin): one 7 px cell per element (n = 2..8), filled = element played next, solid frame = note, dotted frame = rest at current density |
-| 44–49 | `R` + n cells | right thumb, same; different widths = different loop lengths, the filled cell moves at half the pulse rate and starts at a different cell each bar when the loop does not fit |
-| 52–62 | Contour | degree per sounding pulse of this bar (2×2 dots joined by dotted lines), scaled to the part's range |
-| 52, x 58 | Status | blinking `*` = re-roll pending (next bar line); `~` = figures differ from the passage theme |
+| 35 | Beat ticks | 1 px tick at the first pulse of each beat (every 4 pulses on 16, every 3 on 12); downbeat tick 2 px wide |
+| 38–43 | `L` + n cells | left thumb loop (cells from x 7, 2 px right margin): one 7 px cell per element (n = 2..8), filled = element played next, solid frame = note, dotted frame = rest at current density |
+| 46–51 | `R` + n cells | right thumb, same; different widths = different loop lengths, the filled cell moves at half the pulse rate and starts at a different cell each bar when the loop does not fit |
+| 54–63 | Contour | degree per sounding pulse of this bar (2×2 dots joined by dotted lines), scaled to the part's range |
+| 54, right-aligned | `b<i>/<N>` + status | on a cleared box over the contour's top-right: bar counter (see below); one glyph slot left of it: blinking `*` = re-roll pending (next bar line), `~` = figures differ from the passage theme |
 
-Verified screenshots: `host/build/out/lk3_*/ui_001_oled_x6.png`, `host/build/out/lk5/` (Oct +1), `host/build/out/lk5d/` (Dens 0 %) (sim, not hardware).
+**Bar counter.** N = lcm(2·nL, 2·nR, B) / B bars (B = pulses per bar, nL/nR = loop lengths in strokes) is the realignment cycle after which both thumbs start the bar on element 0 again; the part's start offset shifts both thumbs equally and does not change N. Bass 16 grid L4/R3: 3; Bass 12 grid L3/R4: 2; fitting loops (Lead): 1. i = bar playing now, 1..N. Rule (core `SyncCycle`): N is recomputed and i restarts at 1 on `Reset()`, whenever figures are generated (Init, grid/part/seed change, re-roll, new passage -- phases restart at 0) and when a mutation or return-to-theme changes a loop length; otherwise i advances at each bar line and wraps N -> 1. Display caps both at 99 (max reachable N is 35). The counter is not on the parameter line because long values (`Pass 64:12`, `Seed 65535`) reach x 60.
+
+Verified screenshots: `host/build/out/lkb_{bass,bass12,lead,pass}/ui_001_oled_x6.png` (bar indicator), `host/build/out/lk3_*/ui_001_oled_x6.png`, `host/build/out/lk5/` (Oct +1), `host/build/out/lk5d/` (Dens 0 %) (sim, not hardware).

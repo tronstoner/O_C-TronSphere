@@ -79,7 +79,7 @@ custom/
 
 | Env | Flash (of 262144) | RAM (of 65536) |
 |---|---|---|
-| `custom_min` (Hello + Likembe, 2026-10-19) | 97 868 B (37.3 %) | 20 744 B (31.7 %) |
+| `custom_min` (Hello + Likembe w/ bar indicator, 2026-10-19) | 98 252 B (37.5 %) | 20 752 B (31.7 %) |
 | `custom_min` (Hello only) | 92 828 B (35.4 %) | 20 472 B (31.2 %) |
 | upstream `T32` | 225 340 B (86.0 %) | 38 156 B (58.2 %) |
 

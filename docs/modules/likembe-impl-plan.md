@@ -9,6 +9,7 @@ Reference: `docs/research/Congotronics line generator.html` (pattern logic porte
 2. [x] Host tests `host/tests/test_likembe_core.cpp` (14 tests, `task host:test`).
 3. [x] Glue `custom/applets/Likembe.h` (ID 201, I/O, cursor controls, Pack/Unpack).
 4. [x] Visualization (pulse row + cursor, two thumb loops with current element, contour, status).
+4a. [x] Bar indicator: beat ticks under the pulse row, realignment counter `b<i>/<N>` (core `cycle_bars`/`cycle_bar_idx`, test `cycle_bars_and_index`).
 5. [x] Sim verification (`task host:sim`, `task host:ui --headless` screenshots).
 6. [x] Density 0–100 % (no floor); `Oct` parameter −2…+3 after Root, persisted in bits 40–42.
 7. [ ] Hardware: flash, clock from TR1, tune provisional profiles by ear, `task size` delta.

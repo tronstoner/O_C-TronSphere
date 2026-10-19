@@ -40,6 +40,7 @@ public:
     DrawPulseRow();
     DrawThumb(0, kThumbY0);
     DrawThumb(1, kThumbY0 + kThumbPitch);
+    DrawBeatTicks();
     DrawContour();
     DrawStatus();
   }
@@ -90,12 +91,14 @@ private:
   static constexpr int kTextY = 14;
   static constexpr int kPulseY = 25;     // 6 px tall
   static constexpr int kPulseH = 6;
-  static constexpr int kThumbY0 = 36;    // two rows, 6 px tall, 8 px pitch
+  static constexpr int kTickY = 35;      // beat ticks, 1 px tall; downbeat 2 px wide
+  static constexpr int kThumbY0 = 38;    // two rows, 6 px tall, 8 px pitch
   static constexpr int kThumbPitch = 8;
   static constexpr int kThumbCell = 7;
   static constexpr int kThumbX = 7;      // after the L/R label; 8 cells end at x 61 (2 px margin)
-  static constexpr int kContourY = 52;   // 11 px tall strip
-  static constexpr int kContourH = 11;
+  static constexpr int kContourY = 54;   // 10 px tall strip (54-63)
+  static constexpr int kContourH = 10;
+  static constexpr int kCharW = 6;       // font advance
 
   custom::LikembeCore core;
   int cursor = 0;
@@ -174,10 +177,28 @@ private:
     }
   }
 
+  // Tick at the first pulse of every beat (4 pulses on 16, 3 on 12); downbeat 2 px wide.
+  void DrawBeatTicks() {
+    const int w = CellW();
+    const int beat = core.pulses_per_bar / 4;
+    for (int i = 0; i < core.pulses_per_bar; i += beat)
+      gfxLine(i * w, kTickY, i * w + (i == 0 ? 1 : 0), kTickY);
+  }
+
+  static int Digits(int v) { return v >= 10 ? 2 : 1; }
+
   void DrawStatus() {
-    // Top-right of the contour strip: blinking '*' = re-roll pending,
-    // '~' = figures currently differ from the passage theme.
-    if (core.reroll_pending) { if (CursorBlink()) gfxPrint(58, kContourY, "*"); }
-    else if (core.ThemeDiffers()) gfxPrint(58, kContourY, "~");
+    // Top-right of the contour strip, on a cleared box: bar counter b<i>/<N>
+    // (realignment cycle, capped at 99), left of it blinking '*' = re-roll
+    // pending, '~' = figures currently differ from the passage theme.
+    const int i = core.cycle_bar_idx > 99 ? 99 : core.cycle_bar_idx;
+    const int n = core.cycle_bars > 99 ? 99 : core.cycle_bars;
+    const int chars = 2 + Digits(i) + Digits(n) + 1;   // status glyph slot
+    const int x = 64 - chars * kCharW;
+    gfxClear(x - 1, kContourY, 65 - x, 8);
+    const int tx = x + kCharW;
+    gfxPrint(tx, kContourY, "b"); gfxPrint(i); gfxPrint("/"); gfxPrint(n);
+    if (core.reroll_pending) { if (CursorBlink()) gfxPrint(x, kContourY, "*"); }
+    else if (core.ThemeDiffers()) gfxPrint(x, kContourY, "~");
   }
 };

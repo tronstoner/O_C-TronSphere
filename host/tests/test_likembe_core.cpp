@@ -346,6 +346,52 @@ TEST(pack_unpack) {
   return ok;
 }
 
+// Bar counter: N = lcm(2nL, 2nR, B) / B, idx 1..N wraps, phases realign after N
+// bars, restarts on Reset(), regeneration and loop-length mutation.
+TEST(cycle_bars_and_index) {
+  bool ok = true;
+  CHECK(LikembeCore::CycleBars(4, 3, 16) == 3);
+  CHECK(LikembeCore::CycleBars(3, 4, 12) == 2);
+  CHECK(LikembeCore::CycleBars(8, 4, 16) == 1);
+  CHECK(LikembeCore::CycleBars(6, 3, 12) == 1);
+  LikembeCore b = Make(lk::kPartBass, 1);
+  CHECK(b.thumb[0].n == 4 && b.thumb[1].n == 3);
+  CHECK(b.cycle_bars == 3 && b.cycle_bar_idx == 1);
+  LikembeCore b12 = Make(lk::kPartBass, 1, 0);
+  CHECK(b12.cycle_bars == 2);
+  LikembeCore l = Make(lk::kPartLead, 1);
+  CHECK(l.cycle_bars == 1 && l.cycle_bar_idx == 1);
+  RunBar(l); CHECK(l.cycle_bar_idx == 1);
+  b.params.variation_pct = 0;
+  const uint8_t want[] = {2, 3, 1, 2, 3, 1};
+  for (int k = 0; k < 6; ++k) {
+    RunBar(b); CHECK(b.cycle_bar_idx == want[k]);
+    if (b.cycle_bar_idx == 1) CHECK(b.thumb[0].phase == 0 && b.thumb[1].phase == 0);
+  }
+  RunBar(b); CHECK(b.cycle_bar_idx == 2);
+  b.Reset(); CHECK(b.cycle_bar_idx == 1);
+  RunBar(b); CHECK(b.cycle_bar_idx == 2);
+  LikembeParams p = b.params; p.grid16 = 0; b.SetParams(p);
+  RunBar(b); CHECK(b.cycle_bar_idx == 1 && b.cycle_bars == 2);
+  RunBar(b); CHECK(b.cycle_bar_idx == 2);
+  b.Reroll(); RunBar(b); CHECK(b.cycle_bar_idx == 1);
+  CHECK(b.cycle_bars == LikembeCore::CycleBars(b.thumb[0].n, b.thumb[1].n, b.pulses_per_bar));
+  // invariant under full variation: N matches current lengths, idx in 1..N
+  LikembeCore v = Make(lk::kPartSolo, 9);
+  v.params.variation_pct = 100;
+  for (int bar = 0; bar < 500; ++bar) {
+    uint8_t nl = v.thumb[0].n, nr = v.thumb[1].n;
+    uint8_t idx = v.cycle_bar_idx;
+    RunBar(v);
+    bool good = v.cycle_bars == LikembeCore::CycleBars(v.thumb[0].n, v.thumb[1].n, v.pulses_per_bar)
+             && v.cycle_bar_idx >= 1 && v.cycle_bar_idx <= v.cycle_bars;
+    if (nl != v.thumb[0].n || nr != v.thumb[1].n) good = good && v.cycle_bar_idx == 1;
+    else good = good && v.cycle_bar_idx == (idx % v.cycle_bars) + 1;
+    if (!good) { CHECK(good); Dump(v, "cycle"); break; }
+  }
+  return ok;
+}
+
 int main() {
   RUN(determinism);
   RUN(loop_policies_and_unequal);
@@ -361,6 +407,7 @@ int main() {
   RUN(params_live_and_pending);
   RUN(pitch_mapping_and_range);
   RUN(pack_unpack);
+  RUN(cycle_bars_and_index);
   { LikembeCore c = Make(lk::kPartLead, 1); Dump(c, "example lead"); }
   return g_fail ? 1 : 0;
 }
