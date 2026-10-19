@@ -19,11 +19,8 @@ with a core in `custom/core/`. Optional: weegfx rendering of `View()` to an imag
 - [x] BUILD/HOST_SIM docs match.
 - [ ] Hello flashes, shows on the OLED, reads an input and drives an output on hardware.
 
-## Phase 2 — Master clock buses
-Per `docs/clock/MASTER_CLOCK_CONCEPT.md`, after the user answers its open questions.
-**Done when:** N buses with polymetric ratios run from internal and external clock without
-drift (host test + scope on hardware); any applet's `Clock(ch)` can follow a bus via the
-input map; tempo reachable in one gesture; settings persist as decided (global/per preset).
+## Phase 2 — Master clock buses (dropped 2026-10-19)
+No clock rework; modules use upstream ClockSetup + trigger map. See `docs/PROJECT.md` Decisions.
 
 ## Phase 3 — Likembe (one part per applet)
 Per `docs/modules/likembe.md` / `likembe-impl-plan.md`: core → host tests → glue → visualization → hardware.
@@ -34,7 +31,7 @@ Per `docs/modules/likembe.md` / `likembe-impl-plan.md`: core → host tests → 
 
 ## Phase 4 — Evolving voltage module
 Per `docs/modules/evolving-voltage-concept.md` → impl plan → host → hardware.
-**Done when:** the module runs bus-clocked on hardware, L = 0 is steady and consumes no
+**Done when:** the module runs clocked on hardware, L = 0 is steady and consumes no
 randomness, evolution per pass audibly musical, module doc with full controls table.
 
 ## Phase 5 — LFO

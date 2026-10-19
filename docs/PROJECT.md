@@ -6,9 +6,7 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 
 - A **minimal** build: Hemisphere shell + the user's own applets only. Upstream applets are
   opt-in, one at a time, on explicit decision.
-- A **master clock** that is easy to reach (global tempo) and offers polymetric clock buses
-  (ratios such as 3:2, 5:4, 7:8, plus phase for synced modulation) that any applet can follow
-  without spending an applet slot.
+- Clock: upstream as is.
 - A small number of carefully designed own modules: an evolving random voltage + trigger
   source (Vestige-derived), other algorithmic voltage sources, a better LFO.
 - Host-first development: pure logic in `custom/core`, unit-tested and simulated on the host.
@@ -33,7 +31,7 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 | `docs/BUILD.md` | current | Build, flash, envs, size budget (maintained by build work) |
 | `docs/UPSTREAM.md` | current | Subtree workflow, local edits to `firmware/`, licensing |
 | `docs/HOST_SIM.md` | current | Host test harness and simulator |
-| `docs/clock/MASTER_CLOCK_CONCEPT.md` | concept | Clock buses proposal |
+| `docs/clock/MASTER_CLOCK_CONCEPT.md` | shelved | Clock buses proposal (reference only) |
 | `docs/modules/README.md` | current | Module index + overlapping upstream applets |
 | `docs/modules/likembe.md` | current | Likembe module doc (as built, hardware pending) |
 | `docs/modules/likembe-impl-plan.md` | current | Likembe steps, API, doc/JS deviations, open questions |
@@ -67,10 +65,7 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   hardware. Density 0–100 %, Oct parameter (−2…+3). `custom_min` now 97,868 B flash / 20,744 B RAM. Mi-solo/Solo profiles provisional.
 
 ### Open decisions
-- Master clock rework needed? Recommendation: defer; first module reads `HS::clock_m` directly,
-  revisit after hardware (`docs/clock/MASTER_CLOCK_CONCEPT.md` §0).
-- Open questions in `docs/clock/MASTER_CLOCK_CONCEPT.md` §6 and
-  `docs/modules/evolving-voltage-concept.md` §6.
+- Open questions in `docs/modules/evolving-voltage-concept.md` §6.
 
 ## Next Steps
 
@@ -92,3 +87,4 @@ Hello hardware check (Phase 1 remainder) can be done with the same flash.
 | 2026-10 | Host stubs via `-include` prelude + include-guard pre-definition, not only include-path shadowing | Quoted includes resolve next to the including file first, so shadowing alone cannot replace sibling HAL headers (see `docs/HOST_SIM.md`) |
 | 2026-10 | Phase 3 = Likembe, one part per applet instance; evolving voltage moves after it | User decision |
 | 2026-10-10 | License: GPLv3 (GPL-3.0-or-later) for the whole repo, `LICENSE` at root | Combined work is GPLv3 anyway (4 GPLv3 upstream files); matches NitroTron3; repo may be published on GitHub. Details `docs/UPSTREAM.md` |
+| 2026-10-19 | No master clock rework; use upstream clock + trigger map | Existing per-channel mult/div and in-applet division cover the needs; keeps `firmware/` edits at 2 files |

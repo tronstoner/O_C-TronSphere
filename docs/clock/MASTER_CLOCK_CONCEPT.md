@@ -1,12 +1,11 @@
 # Master Clock — Concept
 
-Status: **concept, nothing implemented.** Open questions at the end need user decisions
-before an impl plan is written. Paths relative to `firmware/software/src/`; line numbers
+Status: shelved 2026-10-19 (user decision). Reference only. Paths relative to `firmware/software/src/`; line numbers
 refer to the vendored `T32` snapshot.
 
 ## 0. Assessment: is the rework needed?
 
-Status: **undecided (user).**
+Status: **shelved 2026-10-19 (user decision). Reference only.**
 
 **Already works without core changes**
 1. ClockSetup per-input-channel mult/div (x24 .. /32) on the internal clock, via the

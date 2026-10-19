@@ -21,7 +21,7 @@ hemispheres), 4 CV in, 4 trigger in, 4 CV out, 2 push encoders, 2 buttons.
 | Touching `firmware/`, pulling upstream, licensing | `docs/UPSTREAM.md` |
 | How the firmware works (ISR, IOFrame, applets, display, presets) | `docs/ARCHITECTURE.md` |
 | Host tests / simulator | `docs/HOST_SIM.md` |
-| Clock, tempo, clock buses | `docs/clock/MASTER_CLOCK_CONCEPT.md` |
+| Clock buses (shelved, reference) | `docs/clock/MASTER_CLOCK_CONCEPT.md` |
 | A specific module | `docs/modules/README.md` → that module's docs |
 | Upstream facts (branches, applet API, inventory) | `docs/research/phazerville-notes.md` |
 | Phasing / what comes next | `docs/ROADMAP.md` |
@@ -39,8 +39,8 @@ Any other topic: check `docs/PROJECT.md` § Document Map before assuming a doc d
   host test → hardware. No parallel module development, no speculative modules.
 - **Inside a module: few, well-understood controls.** One main knob/CV per module is the
   default. Every extra parameter needs a reason the user agreed to.
-- **Master clock is a first-class citizen** — global tempo, polymetric divisions any module
-  can follow, without spending an applet slot. See `docs/clock/MASTER_CLOCK_CONCEPT.md`.
+- Clock: use the upstream ClockSetup/trigger map as is. No clock rework (decided 2026-10-19).
+  Applets derive their own divisions; `HS::clock_m` may be read directly.
 
 ## Repository layout
 
