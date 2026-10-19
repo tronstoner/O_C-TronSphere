@@ -91,6 +91,17 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 - `--in0 -4608` (−3 V: 85 − 35 = 50 %): 9–10 notes per bar.
 - 2026-10-19, Bass at 0 % (16 grid, loops 4/3): expected L 2 + R 8/3 = 14 notes per 3 bars; observed 5, 5, 4 per bar = 14, and 56 in 12 bars.
 
+## Out A velocity gate (2026-10-19)
+
+- Out A changed from a ~1 ms `ClockOut` trigger to a plain `Out(0, level)` velocity gate in the
+  glue (`Likembe.h` Controller): tick counter since last TR1 pulse (clamped 10 s), countdown
+  to `Out(0, 0)` at interval × 50 %. Core unchanged, no new core test.
+- `--log-events` detects ClockOut/GateOut only and no longer fires for Out A (expected);
+  use `--log-outputs` instead.
+- Sim (`--clock 100:4 --seconds 6 --log-outputs`): 35 gates in 40 pulses (rests stay 0 V),
+  12 at 7680 (5 V), 23 at 4608 (3 V), no other levels; every gate 75.00 ms (±0.06 ms) except
+  the first (62.5 ms = default 125 ms interval before the first measurement).
+
 ## Open questions for the user
 
 1. Re-roll at next bar line (implemented default) vs immediate (`RerollNow()` exists)?

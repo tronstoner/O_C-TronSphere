@@ -27,7 +27,7 @@ this module.
 | TR2 | Re-roll: new seed + new passage, applied at the next bar line |
 | CV1 | Density modulation, bipolar: ±3 V (`HEMISPHERE_3V_CV`) = ±35 percent points (`kDensityCvRange`), added to Density, effective value clamped to 0..100 %; read every tick (one multiply/divide by constant) |
 | CV2 | Unassigned (open question) |
-| Out A | Trigger per note (no trigger on rests) |
+| Out A | Velocity gate per note: 5 V on accented notes (`kGateAccentUnits`, element 0 of a thumb), 3 V otherwise (`kGateNormalUnits`); length = 50 % (`kGateLengthPct`) of the measured TR1 interval (last interval, clamped to 10 s `kMaxPulseTicks`; 125 ms `kDefaultPulseTicks` until two pulses are seen); a new note re-asserts the level immediately; rests start no gate |
 | Out B | Pitch CV, 1 V/oct, 0 V = C2 (`kMidiAtZeroUnits`); held through rests |
 
 Physical numbering shifts by two in the right-hand slot (TR3/TR4, CV3/CV4, Out C/D). The
@@ -107,7 +107,8 @@ Unpack regenerates everything from the seed (evolving state is not persisted).
 `kStepWeight`, `kMutWeight`, `kOctaveHeadroom`, `kReturnToThemePct`, `kLoopChangePct`,
 `kEnergyBuildPct`, `kDensityMin` (0), `kDensityMax`, `kOctaveMin`, `kOctaveMax`, `kDefaultOctave`, `kDensityCvRange`, `kVariationMax`, `kPassageBars`,
 `kDefaultPassageIdx`, `kDefaultRoot`, `kDefaultGrid16`, `kDefaultSeed`,
-`kPartStreamOffset`, `kPassageStreamOffset`, `kSeedMix`, `kSeedNonZero`.
+`kPartStreamOffset`, `kPassageStreamOffset`, `kSeedMix`, `kSeedNonZero`, `kGateAccentUnits`,
+`kGateNormalUnits`, `kGateLengthPct`, `kDefaultPulseTicks`, `kMaxPulseTicks`.
 
 ## Display (64×64, below the applet header)
 

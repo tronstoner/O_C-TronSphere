@@ -5,7 +5,7 @@
 // only: I/O, cursor/encoder, display, persistence. See docs/modules/likembe.md.
 //
 // TR1 pulse clock (one trigger = one grid pulse), TR2 re-roll at next bar line,
-// CV1 density mod (+-3 V = +-kDensityCvRange %), Out A trigger per note, Out B pitch.
+// CV1 density mod (+-3 V = +-kDensityCvRange %), Out A velocity gate per note, Out B pitch.
 #pragma once
 #include "custom/core/likembe_core.h"
 
@@ -22,16 +22,24 @@ public:
   void Reset() { core.Reset(); }
 
   void Controller() {
+    using namespace custom::likembe;
+    if (since_pulse < kMaxPulseTicks) ++since_pulse;
+    if (gate_ticks && --gate_ticks == 0) Out(0, 0);
     // CV1 -> density offset (integer, constant divisor).
     core.SetDensityMod((int8_t)(In(0) * custom::likembe::kDensityCvRange / HEMISPHERE_3V_CV));
     if (Clock(1)) core.Reroll();
     if (Clock(0)) {
+      if (have_pulse) pulse_ticks = since_pulse;   // already clamped to kMaxPulseTicks
+      have_pulse = true;
+      since_pulse = 0;
       custom::LikembeEvent e = core.Pulse();
       if (e.note) {
         pitch = e.pitch_units;
         Out(1, pitch);
-        ClockOut(0);
-      }
+        Out(0, e.accent ? kGateAccentUnits : kGateNormalUnits);
+        gate_ticks = pulse_ticks * kGateLengthPct / 100;
+        if (gate_ticks == 0) gate_ticks = 1;
+      }   // rest: no new gate; a running gate ends on its countdown
     }
   }
 
@@ -75,7 +83,7 @@ protected:
     help[HELP_DIGITAL2] = "Reroll";
     help[HELP_CV1]      = "Density";
     help[HELP_CV2]      = "";
-    help[HELP_OUT1]     = "Trig";
+    help[HELP_OUT1]     = "Gate acc";
     help[HELP_OUT2]     = "Pitch";
     help[HELP_EXTRA1]   = "1 pulse=16th/trip8th";
     help[HELP_EXTRA2]   = "Seed enc: new pattern";
@@ -103,6 +111,10 @@ private:
   custom::LikembeCore core;
   int cursor = 0;
   int pitch = 0;
+  uint32_t since_pulse = 0;   // ticks since last Clock(0), clamped
+  uint32_t pulse_ticks = custom::likembe::kDefaultPulseTicks;   // measured interval
+  uint32_t gate_ticks = 0;    // Out A countdown; 0 = low
+  bool have_pulse = false;
 
   int CellW() const { return 64 / core.pulses_per_bar; }   // 4 (16) or 5 (12)
 

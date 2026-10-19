@@ -89,6 +89,13 @@ constexpr uint8_t kDefaultRoot = 4;           // E
 constexpr uint8_t kDefaultGrid16 = 1;
 constexpr uint16_t kDefaultSeed = 1;
 
+// ---- Out A velocity gate (glue) ----
+constexpr int kGateAccentUnits = 5 * 1536;    // 5 V on accented notes
+constexpr int kGateNormalUnits = 3 * 1536;    // 3 V on other notes
+constexpr uint32_t kGateLengthPct = 50;       // gate length = % of measured pulse interval
+constexpr uint32_t kDefaultPulseTicks = 2083; // 125 ms @ 16.667 kHz, before first interval
+constexpr uint32_t kMaxPulseTicks = 166670;   // 10 s clamp (stopped clock)
+
 // ---- RNG stream offsets (spec: lead stream = seed + 7919, passages = seed + 31) ----
 constexpr uint32_t kPartStreamOffset = 7919;  // multiplied by the part index
 constexpr uint32_t kPassageStreamOffset = 31;
