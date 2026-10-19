@@ -150,15 +150,24 @@ private:
     gfxCursor(vx, kTextY + 8, 33);
   }
 
-  // Kalimba tines: rel degree 0 (part's lowest key) in the centre, odd rel
-  // degrees fan out right, even ones left (column offset ceil(r/2)), length
-  // shrinks 1 px per column outward. Tops hang from a bridge line.
+  // Kalimba tines, r = degree - key_lo. Sides follow the core's thumb split by
+  // ABSOLUTE degree parity: even degree (thumb L) left from x 29, odd degree
+  // (thumb R) right from x 33, each side's lowest degree nearest the centre.
+  // Column within a side = (d - first same-parity degree) / 2; length shrinks
+  // 1 px per column outward. Tops hang from a bridge line.
   int TineCount() const {
     int n = core.key_hi + custom::likembe::kOctaveHeadroom - core.key_lo + 1;
     return n > kMaxTines ? kMaxTines : n;
   }
-  static int TineX(int r) { const int off = (r + 1) / 2; return kTineCx + ((r & 1) ? off : -off) * kTinePitch; }
-  static int TineLen(int r) { const int l = kTineMaxLen - (r + 1) / 2; return l < kTineMinLen ? kTineMinLen : l; }
+  int TineCol(int r) const {
+    const int lo = core.key_lo, d = lo + r;
+    return (d - (lo + ((d ^ lo) & 1))) / 2;
+  }
+  int TineX(int r) const {
+    const int c = TineCol(r);
+    return ((core.key_lo + r) & 1) ? kTineCx + 2 + c * kTinePitch : kTineCx - 2 - c * kTinePitch;
+  }
+  int TineLen(int r) const { const int l = kTineMaxLen - TineCol(r); return l < kTineMinLen ? kTineMinLen : l; }
 
   void DrawTines() {
     const int n = TineCount();
