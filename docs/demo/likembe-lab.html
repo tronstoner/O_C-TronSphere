@@ -373,12 +373,11 @@ function frameLoop(){
 
 // ---------------- lab table ----------------
 const PER = [   // [label, C++ name, getter/setter path, min, max, step, kind]
-  ['Step weight +1', 'kStepWeight[0]', ['stepW', 0], 0, 255],
-  ['Step weight −1', 'kStepWeight[1]', ['stepW', 1], 0, 255],
-  ['Step weight 0',  'kStepWeight[2]', ['stepW', 2], 0, 255],
-  ['Step weight +2', 'kStepWeight[3]', ['stepW', 3], 0, 255],
-  ['Step weight −2', 'kStepWeight[4]', ['stepW', 4], 0, 255],
-  ['Thumb L start key', 'GenThumb k (no constant yet; lowest = firmware)', ['lStart'], null],
+  ['Step weight +1', 'kStepWeight[part][0]', ['stepW', 0], 0, 255],
+  ['Step weight −1', 'kStepWeight[part][1]', ['stepW', 1], 0, 255],
+  ['Step weight 0',  'kStepWeight[part][2]', ['stepW', 2], 0, 255],
+  ['Step weight +2', 'kStepWeight[part][3]', ['stepW', 3], 0, 255],
+  ['Step weight −2', 'kStepWeight[part][4]', ['stepW', 4], 0, 255],
   ['Mutation: key',    'kMutWeight[kMutKey]',    ['mutW', 0], 0, 255],
   ['Mutation: rest',   'kMutWeight[kMutRest]',   ['mutW', 1], 0, 255],
   ['Mutation: octave', 'kMutWeight[kMutOctave]', ['mutW', 2], 0, 255],
@@ -392,6 +391,7 @@ const GLOB = [
   ['Gate normal (V) → velocity', 'kGateNormalUnits', 'normalV', 0, 6, .1],
   ['Gate length % of pulse', 'kGateLengthPct', 'gatePct', 1, 100, 1],
 ];
+const LSTART = ['Thumb L start key (all parts)', 'kThumbLStartMiddle'];
 const getP = (part, path) => path.length === 2 ? lab.parts[part][path[0]][path[1]] : lab.parts[part][path[0]];
 const setP = (part, path, v) => { if (path.length === 2) lab.parts[part][path[0]][path[1]] = v; else lab.parts[part][path[0]] = v; };
 function buildLab(){
@@ -402,6 +402,7 @@ function buildLab(){
       : `<td><input type="number" min="${r[3]}" max="${r[4]}" step="1" data-per="${i}" data-part="${p}"></td>`).join('') + '</tr>';
   });
   GLOB.forEach((r, i) => { h += `<tr><td>${r[0]} <em class="muted">live</em></td><td><code>${r[1]}</code></td><td colspan="4"><input type="number" min="${r[3]}" max="${r[4]}" step="${r[5]}" data-glob="${i}"> <span class="muted" data-gv="${i}"></span></td></tr>`; });
+  h += `<tr><td>${LSTART[0]}</td><td><code>${LSTART[1]}</code></td><td colspan="4"><select data-lstart="1"><option value="false">lowest (false)</option><option value="true">middle (true)</option></select></td></tr>`;
   $('#lab').innerHTML = h;
   $('#lab').addEventListener('change', e => {
     const el = e.target;
@@ -412,6 +413,8 @@ function buildLab(){
     } else if (el.dataset.glob) {
       const r = GLOB[+el.dataset.glob]; let v = Math.max(r[3], Math.min(r[4], +el.value || 0));
       el.value = v; lab[r[2]] = v;
+    } else if (el.dataset.lstart) {
+      lab.lStartMiddle = el.value === 'true';
     } else return;
     pushLab(); syncLab();
   });
@@ -420,6 +423,7 @@ function buildLab(){
 function syncLab(){
   document.querySelectorAll('[data-per]').forEach(el => { el.value = getP(+el.dataset.part, PER[+el.dataset.per][2]); });
   document.querySelectorAll('[data-glob]').forEach(el => { el.value = lab[GLOB[+el.dataset.glob][2]]; });
+  $('[data-lstart]').value = String(lab.lStartMiddle);
   $('[data-gv="0"]').textContent = `velocity ${(velOf(true)).toFixed(2)}`;
   $('[data-gv="1"]').textContent = `velocity ${(velOf(false)).toFixed(2)}`;
   $('[data-gv="2"]').textContent = '';
@@ -438,15 +442,14 @@ function exportConstants(){
       out.push(`constexpr ${decl}[kPartCount]${dims} = {${parts.map((_, p) => Array.isArray(f(p)) ? arr(f(p)) : f(p)).join(', ')}};`);
     }
   };
-  emit('uint8_t kStepWeight', '[5]', p => lab.parts[p].stepW, '+1, -1, 0, +2, -2');
+  out.push('constexpr uint8_t kStepWeight[kPartCount][5] = {   // +1, -1, 0, +2, -2');
+  parts.forEach((n, p) => out.push(`  ${arr(lab.parts[p].stepW)},${' '.repeat(Math.max(1, 22 - arr(lab.parts[p].stepW).length))}// ${n}`));
+  out.push('};');
+  out.push(`constexpr bool kThumbLStartMiddle = ${lab.lStartMiddle};`);
   emit('uint8_t kMutWeight', '[4]', p => lab.parts[p].mutW, 'key, rest, octave, loop length');
   emit('uint8_t kOctaveHeadroom', '', p => lab.parts[p].headroom);
   emit('uint8_t kReturnToThemePct', '', p => lab.parts[p].ret);
   emit('uint8_t kLoopChangePct', '', p => lab.parts[p].loopChange);
-  const ls = parts.map((n, p) => `${n} ${lab.parts[p].lStart}`).join(', ');
-  out.push(parts.every((_, p) => lab.parts[p].lStart === 'lowest')
-    ? '// thumb L start key: lowest (GenThumb k = 0, unchanged)'
-    : `// thumb L start key (no constant yet; GenThumb k = 0 for lowest, c / 2 for middle): ${ls}`);
   const units = v => Number.isInteger(v) ? `${v} * 1536` : String(Math.round(v * UNITS_PER_VOLT));
   out.push(`constexpr int kGateAccentUnits = ${units(lab.accentV)};    // ${FMT.volt(lab.accentV)} on accented notes`);
   out.push(`constexpr int kGateNormalUnits = ${units(lab.normalV)};    // ${FMT.volt(lab.normalV)} on other notes`);
@@ -458,7 +461,7 @@ function exportConstants(){
 function dumpVoice(v){
   const V = voices[v], p = V.core.params, labNow = playing && V.core.labPending ? V.core.labPending : V.core.lab;
   const args = `--seed ${p.seed} --part ${p.part} --dens ${p.density_pct} --root ${p.root} --oct ${p.octave} --grid ${p.grid16 ? 16 : 12} --var ${p.variation_pct} --pass ${p.passage_idx} --bars ${V.dumpBars}`;
-  const fw = JSON.stringify(labNow.parts[p.part]) === JSON.stringify(E.labDefaults().parts[p.part]);   // velocities/gate do not affect events
+  const fw = JSON.stringify(labNow.parts[p.part]) === JSON.stringify(E.labDefaults().parts[p.part]) && labNow.lStartMiddle === E.labDefaults().lStartMiddle;   // velocities/gate do not affect events
   const o = $('#dumpOut'); o.hidden = false;
   o.textContent = `# voice ${v + 1}: ${args}${fw ? '' : '  (lab values differ from firmware: C++ tool will not match)'}\n` + E.dump(p, V.dumpBars, labNow);
 }

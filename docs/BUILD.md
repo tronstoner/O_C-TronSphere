@@ -79,7 +79,7 @@ custom/
 
 | Env | Flash (of 262144) | RAM (of 65536) |
 |---|---|---|
-| `custom_min` (Hello + Likembe w/ velocity gate, 2026-10-19) | 98 316 B (37.5 %) | 20 784 B (31.7 %) |
+| `custom_min` (Hello + Likembe, per-part step weights, 2026-10-19; `task size`) | 98 588 B (37.6 %) | 20 784 B (31.7 %) |
 | `custom_min` (Hello only) | 92 828 B (35.4 %) | 20 472 B (31.2 %) |
 | upstream `T32` | 225 340 B (86.0 %) | 38 156 B (58.2 %) |
 

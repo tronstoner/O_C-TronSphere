@@ -245,7 +245,7 @@ TEST(reroll_at_bar_line) {
 TEST(passage_length) {
   bool ok = true;
   LikembeCore c = Make(lk::kPartLead, 8);
-  c.params.passage_idx = 1;  // 8 bars
+  c.params.passage_idx = 8;  // 8 bars
   c.params.variation_pct = 100;
   for (int bar = 1; bar <= 8; ++bar) RunBar(c);
   CHECK(c.bar_in_passage == 0 && !c.ThemeDiffers());
@@ -320,7 +320,7 @@ TEST(pitch_mapping_and_range) {
 TEST(pack_unpack) {
   bool ok = true;
   LikembeParams p; p.density_pct = 77; p.part = 3; p.root = 11; p.octave = -2; p.grid16 = 0;
-  p.variation_pct = 100; p.passage_idx = 6; p.seed = 0xBEEF;
+  p.variation_pct = 100; p.passage_idx = 8; p.seed = 0xBEEF;
   LikembeCore a; a.Init(p);
   uint64_t d = a.Pack();
   CHECK(d >> 43 == 0);

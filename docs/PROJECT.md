@@ -65,7 +65,7 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 - `custom_min` currently 92,836 B flash / 20,472 B RAM.
 - Likembe (Phase 3): core + glue (`custom/applets/Likembe.h`, ID 201) implemented, host tests
   pass, sim-verified (I/O timing, re-roll at bar line, CV1 density, screenshots). Not yet on
-  hardware. Density 0–100 %, Oct parameter (−2…+3). `custom_min` now 97,868 B flash / 20,744 B RAM. Mi-solo/Solo profiles provisional.
+  hardware. Density 0–100 %, Oct parameter (−2…+3). `custom_min` now 98,588 B flash / 20,784 B RAM (lab-tuned per-part step weights and thumb-L middle start ported to the core, host-verified). Mi-solo/Solo profiles provisional.
 - Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 9 combinations).
 
 ### Open decisions

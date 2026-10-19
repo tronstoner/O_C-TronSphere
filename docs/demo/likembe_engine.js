@@ -25,18 +25,19 @@ const C = {
   kStepDelta: [1, -1, 0, 2, -2],
   kDensityMax: 100, kOctaveMin: -2, kOctaveMax: 3, kDefaultOctave: 0, kVariationMax: 100,
   kDensityCvRange: 35,
-  kPassageBars: [0, 8, 16, 24, 32, 48, 64],
+  kPassageBars: [0, 1, 2, 3, 4, 5, 6, 7, 8],
   kDefaultPassageIdx: 0, kDefaultRoot: 4, kDefaultGrid16: 1, kDefaultSeed: 1,
   kPartStreamOffset: 7919, kPassageStreamOffset: 31, kSeedMix: 0x9E3779B1, kSeedNonZero: 0x6D2B79F5,
 };
 
-// Lab-exposed constants. Per part (index = Part) although the firmware has one global
-// value each; export prints a global when all parts agree. lStart: thumb L start key
-// ('lowest' = firmware GenThumb k = 0, 'middle' = c / 2 like thumb R).
+// Lab-exposed constants. Per part (index = Part); stepW mirrors kStepWeight[kPartCount][5],
+// the others are one global in the firmware (export prints a global when all parts agree).
+// lStartMiddle mirrors kThumbLStartMiddle (thumb L starts at c / 2 instead of key 0).
 function labDefaults() {
-  const part = () => ({stepW: [30, 30, 12, 8, 8], lStart: 'lowest', mutW: [30, 20, 6, 5],
+  const stepW = [[30, 70, 12, 8, 8], [20, 70, 12, 5, 10], [30, 70, 12, 8, 8], [30, 70, 12, 8, 8]];
+  const part = p => ({stepW: stepW[p].slice(), mutW: [30, 20, 6, 5],
     ret: 30, loopChange: 40, headroom: 2});
-  return {parts: [part(), part(), part(), part()], accentV: 5, normalV: 3, gatePct: 50};
+  return {parts: [part(0), part(1), part(2), part(3)], lStartMiddle: true, accentV: 5, normalV: 3, gatePct: 50};
 }
 const cloneLab = l => JSON.parse(JSON.stringify(l));
 
@@ -205,7 +206,7 @@ class Core {
 
   GenThumb(th, n) {
     const keys = this.Keys(th), c = keys.length, L = this.L();
-    let k = th === 0 ? (L.lStart === 'middle' ? (c >> 1) : 0) : (c >> 1);
+    let k = (th === 0 && !this.lab.lStartMiddle) ? 0 : (c >> 1);
     const t = this.thumb[th];
     t.n = n; t.phase = 0;
     let allEqual = true;

@@ -63,9 +63,17 @@ constexpr PartProfile kParts[kPartCount] = {
 };
 
 // ---- Generation / variation weights (integer-scaled from the spec) ----
-// Step weights +1, -1, 0, +2, -2 (spec 3, 3, 1.2, 0.8, 0.8).
+// Step weights per part: relative odds of the next key step +1, -1, 0, +2, -2 when a
+// thumb figure is generated (tuned in the browser lab; spec was 3, 3, 1.2, 0.8, 0.8).
 constexpr int8_t kStepDelta[5] = {1, -1, 0, 2, -2};
-constexpr uint8_t kStepWeight[5] = {30, 30, 12, 8, 8};
+constexpr uint8_t kStepWeight[kPartCount][5] = {
+  {30, 70, 12, 8, 8},    // Bass
+  {20, 70, 12, 5, 10},   // Lead
+  {30, 70, 12, 8, 8},    // Mi-solo
+  {30, 70, 12, 8, 8},    // Solo
+};
+// Thumb L figure start key: true = middle key (c / 2, like thumb R), false = lowest key.
+constexpr bool kThumbLStartMiddle = true;
 // Mutation weights key, rest, octave, loop length (spec 3, 2, 0.6, 0.5).
 enum Mutation : uint8_t { kMutKey = 0, kMutRest = 1, kMutOctave = 2, kMutLoop = 3 };
 constexpr uint8_t kMutWeight[4] = {30, 20, 6, 5};
@@ -82,7 +90,7 @@ constexpr int8_t kOctaveMin = -2, kOctaveMax = 3;   // Oct parameter (octave off
 constexpr int8_t kDefaultOctave = 0;
 constexpr uint8_t kVariationMax = 100;
 constexpr int kDensityCvRange = 35;          // CV1: percent points at +-3 V (HEMISPHERE_3V_CV)
-constexpr uint8_t kPassageBars[] = {0, 8, 16, 24, 32, 48, 64};   // 0 = Off (manual only)
+constexpr uint8_t kPassageBars[] = {0, 1, 2, 3, 4, 5, 6, 7, 8};   // 0 = Off (manual only)
 constexpr uint8_t kPassageCount = sizeof(kPassageBars);
 constexpr uint8_t kDefaultPassageIdx = 0;     // Off
 constexpr uint8_t kDefaultRoot = 4;           // E

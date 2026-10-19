@@ -192,8 +192,8 @@ struct LikembeCore {
 
   // Persistence (settings only). Bit layout, LSB first:
   //  0..6 density_pct (7)  7..8 part (2)  9..12 root (4)  13 grid16 (1)
-  // 14..20 variation_pct (7) 21..23 passage_idx (3) 24..39 seed (16)
-  // 40..42 octave - kOctaveMin (3; 6, 7 clamp to +3)
+  // 14..20 variation_pct (7) 21..24 passage_idx (4) 25..40 seed (16)
+  // 41..43 octave - kOctaveMin (3; 6, 7 clamp to +3)
   uint64_t Pack() const {
     uint64_t d = 0;
     d |= (uint64_t)(params.density_pct & 0x7F);
@@ -201,9 +201,9 @@ struct LikembeCore {
     d |= (uint64_t)(params.root & 0xF) << 9;
     d |= (uint64_t)(params.grid16 & 0x1) << 13;
     d |= (uint64_t)(params.variation_pct & 0x7F) << 14;
-    d |= (uint64_t)(params.passage_idx & 0x7) << 21;
-    d |= (uint64_t)params.seed << 24;
-    d |= (uint64_t)((params.octave - likembe::kOctaveMin) & 0x7) << 40;
+    d |= (uint64_t)(params.passage_idx & 0xF) << 21;
+    d |= (uint64_t)params.seed << 25;
+    d |= (uint64_t)((params.octave - likembe::kOctaveMin) & 0x7) << 41;
     return d;
   }
   static LikembeParams UnpackParams(uint64_t d) {
@@ -213,9 +213,9 @@ struct LikembeCore {
     p.root = (uint8_t)((d >> 9) & 0xF);
     p.grid16 = (uint8_t)((d >> 13) & 0x1);
     p.variation_pct = (uint8_t)((d >> 14) & 0x7F);
-    p.passage_idx = (uint8_t)((d >> 21) & 0x7);
-    p.seed = (uint16_t)((d >> 24) & 0xFFFF);
-    p.octave = (int8_t)(((d >> 40) & 0x7) + likembe::kOctaveMin);
+    p.passage_idx = (uint8_t)((d >> 21) & 0xF);
+    p.seed = (uint16_t)((d >> 25) & 0xFFFF);
+    p.octave = (int8_t)(((d >> 41) & 0x7) + likembe::kOctaveMin);
     p.Clamp();
     return p;
   }
@@ -317,12 +317,12 @@ struct LikembeCore {
 
   void GenThumb(uint8_t th, uint8_t n) {
     int8_t keys[16]; uint8_t c = Keys(th, keys);
-    int k = th == 0 ? 0 : c / 2;
+    int k = (th == 0 && !likembe::kThumbLStartMiddle) ? 0 : c / 2;
     LikembeThumb& t = thumb[th];
     t.n = n; t.phase = 0;
     bool all_equal = true;
     for (uint8_t j = 0; j < n; ++j) {
-      if (j) k = ClampI(k + likembe::kStepDelta[PickW(rng_part, likembe::kStepWeight, 5)], 0, c - 1);
+      if (j) k = ClampI(k + likembe::kStepDelta[PickW(rng_part, likembe::kStepWeight[active_part], 5)], 0, c - 1);
       t.e[j].degree = keys[k];
       t.e[j].draw = j ? (uint8_t)(Next(rng_part) >> 24) : 0;
       if (keys[k] != t.e[0].degree) all_equal = false;

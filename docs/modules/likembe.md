@@ -47,7 +47,7 @@ toggles edit mode; in edit mode the encoder changes the value. Order = user prio
 | 4 `Oct` | Octave offset (shifts all pitches by 12·Oct semitones) | −2…+3, shown `Oct +1` / `Oct 0` / `Oct -2` | 0 | 1 octave | immediately |
 | 5 `Grid` | Pulses per bar | 16 / 12 (right = 16, left = 12) | 16 | — | next bar line (regenerates) |
 | 6 `Var` | Variation rate | 0–100 % (= 0–1 mutations per bar) | per part (Bass 8) | 5 % | immediately |
-| 7 `Pass` | Passage length | Off, 8, 16, 24, 32, 48, 64 bars; shows `len:bar` | Off | — | immediately |
+| 7 `Pass` | Passage length | Off, 1–8 bars; shows `len:bar` | Off | — | immediately |
 | 8 `Seed` | Seed | 0–65535 (decimal) | 1 | any turn in edit mode = new random seed | **immediately** (`RerollNow`); TR2 re-roll waits for the bar line |
 
 Element 0 of each thumb never rests, so at 0 % density each thumb plays only its first element, once per pass through its loop.
@@ -85,7 +85,7 @@ regeneration, pending re-roll, passage end, or variation) inside the call that e
 MIDI per spec: `base + 12*(floor(d/n) + Oct) + offset[d mod n]`, base = root pitch class nearest
 the anchor (−5..+6 semitones).
 
-## Persistence (`Pack()`/`Unpack()`, settings only, 43 of 64 bits)
+## Persistence (`Pack()`/`Unpack()`, settings only, 44 of 64 bits)
 
 | Bits | Field | Validation |
 |---|---|---|
@@ -94,9 +94,9 @@ the anchor (−5..+6 semitones).
 | 9–12 | root | clamp ≤ 11 |
 | 13 | grid16 | — |
 | 14–20 | variation_pct | clamp ≤ 100 |
-| 21–23 | passage_idx | clamp ≤ 6 |
-| 24–39 | seed | — |
-| 40–42 | octave + 2 (0..5 = −2..+3) | 6, 7 clamp to +3 |
+| 21–24 | passage_idx | clamp ≤ 8 |
+| 25–40 | seed | — |
+| 41–43 | octave + 2 (0..5 = −2..+3) | 6, 7 clamp to +3 |
 
 Unpack regenerates everything from the seed (evolving state is not persisted).
 
@@ -122,13 +122,14 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
   / 5 V (accent 5 V = 1.0, normal 3 V = 0.6); note sustain = gate length.
 - **Reference only (not in the firmware):** bass drum patterns and clave/bell/beat from the
   demo; they follow voice 1's grid.
-- **Lab / constants:** firmware constants with their C++ names, per part: `kStepWeight`,
-  thumb-L start key (lowest = firmware, middle = lab idea, no constant yet), `kMutWeight`,
-  `kReturnToThemePct`, `kLoopChangePct`, `kOctaveHeadroom`; global and live:
+- **Lab / constants:** firmware constants with their C++ names, per part: `kStepWeight`
+  (per-part table in the core), `kMutWeight`, `kReturnToThemePct`, `kLoopChangePct`,
+  `kOctaveHeadroom`; global: `kThumbLStartMiddle`; global and live:
   `kGateAccentUnits`, `kGateNormalUnits` (as volts), `kGateLengthPct`. Engine constants apply at
   the next bar line (immediately when stopped). **Export constants** prints a snippet in
-  `likembe_constants.h` format; a value that differs between parts is printed as a per-part
-  table with a note that the core needs a change for it.
+  `likembe_constants.h` format (`kStepWeight[kPartCount][5]`, `kThumbLStartMiddle`); a
+  global-only value that differs between parts is printed as a per-part table with a note
+  that the core needs a change for it.
 - **Dump events:** N bars from Init with the voice's current parameters, in the parity format,
   headed by the equivalent `likembe_dump` arguments (flagged when lab values differ from firmware).
 
@@ -139,11 +140,17 @@ default in `labDefaults()` (`likembe_engine.js`) to the same values, `task host:
 
 `kUnitsPerSemitone`, `kUnitsPerOctave`, `kMidiAtZeroUnits`, `kMaxPitchUnits`, `kTunings`,
 `kTuningCount`, `kGrid16`, `kGrid12`, `kMinLoop`, `kMaxLoop`, `kParts`, `kStepDelta`,
-`kStepWeight`, `kMutWeight`, `kOctaveHeadroom`, `kReturnToThemePct`, `kLoopChangePct`,
+`kStepWeight`, `kThumbLStartMiddle`, `kMutWeight`, `kOctaveHeadroom`, `kReturnToThemePct`, `kLoopChangePct`,
 `kEnergyBuildPct`, `kDensityMin` (0), `kDensityMax`, `kOctaveMin`, `kOctaveMax`, `kDefaultOctave`, `kDensityCvRange`, `kVariationMax`, `kPassageBars`,
 `kDefaultPassageIdx`, `kDefaultRoot`, `kDefaultGrid16`, `kDefaultSeed`,
 `kPartStreamOffset`, `kPassageStreamOffset`, `kSeedMix`, `kSeedNonZero`, `kGateAccentUnits`,
 `kGateNormalUnits`, `kGateLengthPct`, `kDefaultPulseTicks`, `kMaxPulseTicks`.
+
+- `kStepWeight[kPartCount][5]`: per part, relative odds of the key step (+1, -1, 0, +2, -2,
+  order of `kStepDelta`) between consecutive strokes when a thumb figure is generated; the
+  active part's row is used.
+- `kThumbLStartMiddle`: thumb L's figure starts at the middle key (`c / 2`) like thumb R when
+  true (current, all parts); lowest key (`0`) when false.
 
 ## Display (64×64, below the applet header)
 
