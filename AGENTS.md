@@ -82,6 +82,19 @@ ornamentandcrime/
 - Tuning values live in constants headers (`custom/core/<module>_constants.h`), not in docs
   and not as literals scattered in code. Docs reference the constant name.
 
+### Work phases — implementation needs an explicit "go"
+Every topic moves through three phases. Agents never skip a phase on their own.
+1. **Discussion.** The user gives feedback, asks a question, describes a problem or an idea.
+   This is **never** a request to write code. Answer, analyse, explain. Short.
+2. **Proposal.** When a change is on the table, the agent states the proposed change in a
+   few lines (what changes, parameter names, defaults, what is removed) and stops.
+3. **Implementation.** Starts only after a dedicated "go" (or equivalent explicit wording)
+   from the user for that proposal. Then: implement, verify on host, update docs, commit
+   savepoint, report tersely.
+A user message that contains new input while an implementation is running is discussion,
+not a change of the running task; stop and go back to phase 2 if the input affects it.
+Exception to the "go" rule: trivial numeric or obvious choices inside an approved task.
+
 ### Decision-making
 - **Ask before coding a fix or change.** Describe the problem, list 2–3 concrete options,
   wait for the user's choice. Exception: trivial numeric or obvious choices — just pick.
