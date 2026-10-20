@@ -59,7 +59,7 @@ happens at the bar line, by definition.
 | 4 `Len` | Steps per bar (bar line, realignment cycle, loop fit, step row) | 1–32 (`kLenMin`..`kLenMax`) | 16 (`kDefaultLen`) | 1 | immediately (regenerates; `pulse_idx` wrapped into the new bar, passage counter kept, phases restart at 0) |
 | 5 `Root` | Root (lowest key) | C..B, wraps | E (`kDefaultRoot`) | 1 semitone | immediately |
 | 6 `Oct` | Octave offset (shifts all pitches by 12·Oct semitones) | −2…+3, shown `Oct +1` / `Oct 0` / `Oct -2` | 0 | 1 octave | immediately |
-| 7 `Roll` | Re-roll every N bars (passage length) | Off, 1–8 bars; shows `Off` or `len:bar` | Off | — | setting immediately; the roll itself happens at the bar line that ends the passage |
+| 7 `Roll` | Re-roll every N bars (passage length) | Off, 1–8 bars; shows `Off` or `len/bar` (bar 1-based, e.g. `3/1`..`3/3`) | Off | — | setting immediately; the roll itself happens at the bar line that ends the passage |
 | 8 `Seed` | Seed | 0–65535 (decimal) | 1 | any turn in edit mode = new random seed | immediately (`RerollNow`, same as the Roll input) |
 | 9 `Clock` | Shown `Clock >`; **push opens the Clock page** (no edit mode) | — | — | — | — |
 
@@ -67,7 +67,7 @@ Len 1 (without the lab cap): one pulse per bar, thumb L plays it, phases do not 
 
 **Clock page** (applet-drawn sub-page, own cursor; settings `custom::LikembeClock`,
 `custom/core/likembe_clock.h`). Turn = move between rows, push = edit (inverted) / leave
-edit. `Back` + push returns to the main list with the cursor on `Clock`; while editing a
+edit. `< Back` + push returns to the main list with the cursor on `Clock`; while editing a
 row, the other hemisphere's button (`AuxButton`) cancels the edit and also returns.
 
 | Row | Function | Values | Default | Takes effect |
@@ -76,7 +76,7 @@ row, the other hemisphere's button (`AuxButton`) cancels the edit and also retur
 | `Div` | `Src Int`: **the ClockSetup slot multiplier** (`GetMultiply(io_offset)` / `SetMultiply(m, io_offset)`, written immediately, persisted by ClockSetup, not by the applet). Steps through the shared multiplier list (`custom/core/clock_mult_list.h`, same list and steps as ClockSetup's encoders, `docs/CLOCK.md` 2) excluding off; shown in ClockSetup notation only (`x4`, `/2`), no note names. A value outside the list (set in ClockSetup, e.g. `x9`) is shown as is; the next step snaps to the nearest list entry in that direction. `Src TRn`: jack pulses per step, shown in division notation (`/3` = one step every 3 pulses, `clock_mult::DivLabel`) | Int: `/32 /24 /16 /12 /8 /7 /6 /5 /4 /3 /2 x1 x2 x3 x4 x5 x6 x7 x8 x12 x16 x24` (22, `clock_mult::kList` from index `kIntMultLo`); TRn: `/1 /2 /3 /4 /5 /6 /7 /8 /12 /16 /24 /32` (`kTrDivs`, index persisted) | Int: x4 (`kDefaultIntMult`, set on load / Src→Int when the slot is off); TRn 1 (`kDefaultTrDivIdx`) | Int: the slot's next tock; TRn: next pulse (decrement counter, fires on the first pulse after a reset; a Div lowered below the pulses still pending fires on the next pulse) |
 | `Roll` | Re-roll trigger input, physical jack (immediate re-roll; the main-list `Roll` bars setting is separate) | `Off`, `TR1`..`TR4` | `TR2` on both hemispheres (`kDefaultRoll`) | next tick |
 | `Rst` | Restart trigger input, physical jack: `Reset()` = bar start, phases 0, figures kept, divider re-armed | `Off`, `TR1`..`TR4` | `Off` (`kDefaultRst`) | next tick |
-| `Back` | Return to the main list | — | — | — |
+| `< Back` | Return to the main list | — | — | — |
 
 Roll and Rst on the same input both fire (re-roll first, then restart). Clock start always
 restarts the sequence (upstream auto_reset calls `Reset()` on every applet, `docs/CLOCK.md`
@@ -181,7 +181,7 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
   Lab limitation: events are scheduled 120 ms ahead, so Stop or a setting change acts on the
   next unscheduled pulse.
 - **Display:** a 4x canvas of the module display below the parameter line (tines, step row,
-  running light, beat ticks, bar-cycle squares, status glyphs, L/R loop rows), drawn by a port of
+  running light, beat ticks, bar row, status glyphs, L/R loop rows), drawn by a port of
   `Likembe::View`, plus a text line per thumb (`X` accent, `x` note, `.` rest, `[ ]` next element,
   degrees, phase, cycle, seed, roll counter, `~theme`, `+lab` = lab constants pending).
 - **Sound:** tine synth, amp and room from the Congotronics demo. Velocity = Out A gate level
@@ -231,13 +231,13 @@ default in `labDefaults()` (`likembe_engine.js`) to the same values, `task host:
 | 38–43 | Step row | this bar's pulses (`EventAt`), 4 px cells for Len ≤ 16, 2 px cells above (Len 32 = 64 px): tall bar = accented note (element 0 of a thumb), short bar = note, dot = rest or offset pulse |
 | 44–45 | Running light | 2 px bar (cell width) under the pulse just played |
 | 46 | Beat ticks | 1 px tick at the first pulse of each beat (every 4 pulses, `kBeatPulses`, for any Len); downbeat 2 px wide |
-| 48–50 | Bar-cycle squares | one 3×3 square per bar of the realignment cycle N (4 px pitch, from x 0), current bar filled, others hollow; if N × 4 > 50: 1 px-wide markers (width 50/N) with the current one filled. Never reaches x 50 |
+| 48–50 | Bar row | x 0..49: N segments of width w = max(1, 50/N), one per bar (drawn count capped at 50 px). Filled w−1×3 rect (1 px if w = 1) = current bar, others one pixel at y 50. Roll Off: N = realignment cycle (`cycle_bars`), current = `cycle_bar_idx`. Roll On: N = passage length (`kPassageBars`), elapsed bars filled too, so the row fills left to right and resets at the re-roll. Theme glyph `~` at x 58 |
 | 48–50, x 58 | Status | 3 px pixel glyphs: `~` (x 58) = figures differ from the passage theme |
 | 52–56 | `L` + n cells | left thumb loop: 3×5 pixel label at x 0, 5×5 cells from x 5 at 7 px pitch (n = 2..8, ends x 58): filled = element played next, solid frame = note, dotted frame (checkerboard, corners lit) = rest at current density |
 | 58–62 | `R` + n cells | right thumb, same; different widths = different loop lengths, the filled cell moves at half the pulse rate and starts at a different cell each bar when the loop does not fit |
 
 **Clock page** replaces the whole view while open: five rows at y 14, 24, 34, 44, 54
-(10 px pitch, last row ends at y 61): label at x 1 (`Src`, `Div`, `Roll`, `Rst`, `Back`),
+(10 px pitch, last row ends at y 61): label at x 1 (`Src`, `Div`, `Roll`, `Rst`, `< Back`),
 value at x 34 (`kPageValX`) on every row (`Int`/`TR1`..`TR4`; `Div`: with `Src Int` the
 multiplier in ClockSetup notation `x4`, `/2`, `x24`, `/32`, off-list `x9`/`off`, no note name; with
 `Src TRn` the division `/1`..`/32`; `Off`/`TRn`, `Off`/`TRn`). Cursor = upstream `gfxCursor`: blinking underline under

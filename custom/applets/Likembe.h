@@ -171,8 +171,8 @@ private:
   static constexpr int kStepH = 6;
   static constexpr int kBeatPulses = 4;
   static constexpr int kTickY = 46;      // beat ticks (current-step bar at 44-45)
-  static constexpr int kSqY = 48;        // bar-cycle squares, 3 px tall (48-50)
-  static constexpr int kSqMaxW = 50;     // squares end before x 50 (theme glyph at 58)
+  static constexpr int kSqY = 48;        // bar row, 3 px tall (48-50)
+  static constexpr int kSqMaxW = 50;     // bar row ends before x 50 (theme glyph at 58)
   static constexpr int kThumbY0 = 52;    // two rows, 5 px tall, 6 px pitch (52-56, 58-62)
   static constexpr int kThumbPitch = 6;
   static constexpr int kThumbCell = 7;
@@ -236,14 +236,14 @@ private:
   }
 
   void DrawPage() {
-    static const char* const kRows[] = {"Src", "Div", "Roll", "Rst", "Back"};
+    static const char* const kRows[] = {"Src", "Div", "Roll", "Rst", "< Back"};
     for (int r = 0; r <= kPgLast; ++r) {
       const int y = kPageRowY0 + r * kPageRowH;
       gfxPrint(1, y, kRows[r]);
       if (r != kPgBack) { gfxPrint(kPageValX, y, ""); PrintPageValue(r); }
     }
     const int y = kPageRowY0 + page_cursor * kPageRowH;
-    if (page_cursor == kPgBack) gfxCursor(1, y + 8, 25);
+    if (page_cursor == kPgBack) gfxCursor(1, y + 8, 37);
     else gfxCursor(kPageValX - 1, y + 8, 64 - kPageValX);
   }
 
@@ -269,7 +269,11 @@ private:
       case kCurVar:     gfxPrint(p.variation_pct); gfxPrint("%"); break;
       case kCurPassage:
         if (custom::likembe::kPassageBars[p.passage_idx] == 0) gfxPrint("Off");
-        else { gfxPrint(custom::likembe::kPassageBars[p.passage_idx]); gfxPrint(":"); gfxPrint(core.bar_in_passage); }
+        else {   // "len/bar", bar 1-based
+          const int len = custom::likembe::kPassageBars[p.passage_idx];
+          const int bar = core.bar_in_passage + 1;
+          gfxPrint(len); gfxPrint("/"); gfxPrint(bar < len ? bar : len);
+        }
         break;
       case kCurSeed:    gfxPrint((int)p.seed); break;
     }
@@ -339,20 +343,18 @@ private:
     for (int i = 0; i < b; i += kBeatPulses) gfxLine(i * w, kTickY, i * w + (i == 0 ? 1 : 0), kTickY);
   }
 
-  // Realignment cycle: one 3x3 square per bar, current filled; thin segments if many.
+  // Bar row: n segments across kSqMaxW, one per bar; filled = current bar
+  // (Roll On: also bars already elapsed in the passage), others one pixel.
+  // Roll Off: n = realignment cycle; Roll On: n = passage length.
   void DrawSquares() {
-    const int n = core.cycle_bars, cur = core.cycle_bar_idx - 1;
-    if (n * 4 <= kSqMaxW) {
-      for (int i = 0; i < n; ++i) {
-        if (i == cur) gfxRect(i * 4, kSqY, 3, 3); else gfxFrame(i * 4, kSqY, 3, 3);
-      }
-    } else {
-      const int w = kSqMaxW / n > 1 ? kSqMaxW / n : 1;
-      for (int i = 0; i < n && i * w < kSqMaxW; ++i) {
-        const int x = i * w;
-        if (i == cur) gfxRect(x, kSqY, w > 1 ? w - 1 : 1, 3);
-        else gfxPixel(x, kSqY + 2);
-      }
+    const int len = custom::likembe::kPassageBars[core.params.passage_idx];
+    const int n = len ? len : core.cycle_bars;
+    const int cur = len ? core.bar_in_passage : core.cycle_bar_idx - 1;
+    const int w = kSqMaxW / n > 1 ? kSqMaxW / n : 1;
+    for (int i = 0; i < n && i * w < kSqMaxW; ++i) {
+      const int x = i * w;
+      if (i == cur || (len && i < cur)) gfxRect(x, kSqY, w > 1 ? w - 1 : 1, 3);
+      else gfxPixel(x, kSqY + 2);
     }
   }
 
@@ -375,7 +377,7 @@ private:
       else if (rest) DottedFrame(x, y, kCellS);
       else gfxFrame(x, y, kCellS, kCellS);
     }
-    // 3x5 pixel label (the 8 px font would collide with the squares row)
+    // 3x5 pixel label (the 8 px font would collide with the bar row)
     gfxLine(0, y, 0, y + 4);
     if (th) {   // R
       gfxLine(1, y, 1, y); gfxPixel(2, y + 1); gfxPixel(1, y + 2); gfxPixel(2, y + 3); gfxPixel(2, y + 4);
@@ -386,7 +388,7 @@ private:
 
 
   void DrawStatus() {
-    // Right of the squares row, 3 px pixel glyphs (font glyphs would hit the
+    // Right of the bar row, 3 px pixel glyphs (font glyphs would hit the
     // tick and loop rows): '~' at x 58 = figures differ from the passage theme.
     const int y = kSqY;
     if (core.ThemeDiffers()) {
