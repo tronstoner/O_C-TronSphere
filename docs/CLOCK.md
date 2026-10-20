@@ -77,43 +77,53 @@ ClockSetup's TRIG rows (`applets/ClockSetup.h:185-189`).
 
 Other values have no common note name. The browser lab uses the same labels.
 
-## 2. Our rule for applets (decided 2026-10-20)
+## 2. Our rule for applets (decided 2026-10-20, revised the same day)
 
-Intent: consistent, predictable clock behaviour, identical on both hemispheres,
-independent of the ClockSetup slot multipliers and the trigger map.
+Intent: **one clock division, not two layers.** With `Src Int` the applet's `Div` row *is*
+the ClockSetup slot multiplier: one value, shown and edited in both places. Both applets
+start when the internal clock starts. Few, musical values.
 
-- **`Src Int`** = the internal clock's **24-pulses-per-beat** tock:
-  `HS::clock_m.IsRunning() && HS::clock_m.Tock(ClockManager::MIDI_CLOCK)`
-  (`HSClockManager.h:57`, `tocks_per_beat[MIDI_CLOCK] = MIDI_OUT_PPQN = 24` :42, :75). `SyncTrig()`
-  computes it every tick while the clock runs, independent of the slot multipliers and of
-  `midi_out_enabled` (only `MIDITock()` checks that). Runs whenever the internal clock runs
-  (also when it follows external sync on TR1), on both sides; stops when it stops.
-  `Clock(0)` / `frame.clocked[]` are **not** used. **ClockSetup slot multipliers (MULT rows)
-  and the trigger map do not affect our applets.**
-- **`Src TRn`** = the physical jack (decided 2026-10-20). `Src TRn`, `Roll TRn`, `Rst TRn`
-  read the rising edge of `HS::frame.gate_high[n-1]`, the raw level of jack TRn read every
-  tick with `OC::DigitalInputs::read_immediate` (`HemisphereApplet.cpp:87-90`), edge state
-  kept in the applet.
-- **`Div`** = pulses per engine step, for every source (decrement counter, fires on the first
-  pulse after a reset; `custom::PulseDivider`, `custom/core/likembe_clock.h`). Stored per
-  source kind: `div_int` (1..24, default 6 = 1/16) and `div_tr` (1..16, default 1); the `Div`
-  row edits the one for the current `Src`, so switching `Src` keeps each tempo.
-- **Note names** with `Src Int` (one beat = a quarter note, 24 pulses):
+- **`Src Int`** = `Clock(0)` semantics for the internal clock only: step when
+  `HS::clock_m.IsRunning() && HS::clock_m.Tock(io_offset)` — the tock of this hemisphere's
+  first ClockSetup slot (left = slot 1 / channel 0, right = slot 3 / channel 2; the same
+  index `IOFrame::Load` uses as `virt_chan`, `HemisphereApplet.cpp:120-126`). The jack /
+  trigger map is **not** used (no fallback to `trigmap[].Clock()` while stopped or "off").
+  Runs whenever the internal clock runs (also when it follows external sync on TR1).
+- **`Div` with `Src Int`** reads `HS::clock_m.GetMultiply(io_offset)` and the encoder writes
+  `HS::clock_m.SetMultiply(m, io_offset)` immediately. Curated list (`kIntMults`,
+  ClockManager terms −3, −2, −1, 1..8, 12):
 
-  | Div | 24 | 16 | 12 | 8 | 6 | 4 | 3 | 2 |
-  |---|---|---|---|---|---|---|---|---|
-  | Note | 1/4 | 1/4T | 1/8 | 1/8T | 1/16 | 1/16T | 1/32 | 1/32T |
+  | Shown | /4 | /3 | /2 | x1 | x2 | x3 | x4 | x5 | x6 | x7 | x8 | x12 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | Note | 1/1 | – | 1/2 | 1/4 | 1/8 | 1/8T | 1/16 | – | 1/16T | – | 1/32 | 1/32T |
 
-  Other values show only the number. Constants: `kDivNotes`, `kIntPpqn` (`likembe_constants.h`).
+  Display: ClockSetup notation, then the note name when known (`kMultNotes`), e.g.
+  `Div x4 1/16`; `x12` shows no note name (does not fit 64 px). A value set in ClockSetup
+  that is not in the list (e.g. `x9`, `/32`, `off`) is shown as is; the next encoder step
+  snaps to the nearest list entry in that direction (`custom::StepIntMult`).
+- **The applet writes to ClockSetup.** On load (`Start()`, after `OnDataReceive`) and when
+  `Src` is switched to `Int`: if the slot multiplier is 0 (off), the applet sets x4
+  (`kDefaultIntMult`). The value is persisted by ClockSetup (its `OnDataRequest`, 6 bits per
+  slot, `ClockSetup.h:252/278`), not by the applet. If ClockSetup's own preset data loads
+  after the applet, ClockSetup's stored value wins (also "off": the applet then does not step
+  until the slot is set again — not observed in the sim, check on hardware).
+- **`Src TRn`** = the physical jack. `Src TRn`, `Roll TRn`, `Rst TRn` read the rising edge
+  of `HS::frame.gate_high[n-1]` (raw level, `HemisphereApplet.cpp:87-90`), edge state kept in
+  the applet. **`Div`** = jack pulses per engine step from `kTrDivs` = 1 2 3 4 5 6 7 8 12 16
+  (index persisted, default 1; decrement counter `custom::PulseDivider`, fires on the first
+  pulse after a reset).
 - **Roll / Rst inputs per applet**: an applet may offer its own trigger inputs for actions
   (Likembe: `Roll` re-roll, `Rst` restart at bar start; values `Off`, `TR1`..`TR4`). Several
   actions on the same input all fire. Defaults identical on both sides.
-- Applets may read `HS::clock_m` (`IsRunning()`, `Tock()`), never write it.
+- Applets read `HS::clock_m` (`IsRunning()`, `Tock()`, `GetMultiply()`); the only write is
+  `SetMultiply()` on their own slot (`io_offset`), as described above.
 - **Clock start always restarts the sequence**: upstream calls `Reset()` on every applet when
   the clock starts (auto_reset, 1.2); kept as is. `Rst` adds a trigger input for restarts.
 - Likembe is the reference implementation: Clock page (`docs/modules/likembe.md`).
+- Superseded the same day: `Src Int` = 24 PPQN `Tock(MIDI_CLOCK)` with an applet-side
+  `div_int` (two division layers; slot multipliers ignored).
 
-Sections 1.1-1.3 describe upstream routing for upstream applets; our applets bypass it.
+Sections 1.1-1.3 describe upstream routing for upstream applets; with `Src Int` our applets use the slot's tock (1.1) but never the trigger map.
 
 ## 3. Host simulator coverage
 
@@ -126,6 +136,7 @@ default sources. Not covered: the ClockSetup **UI** (its `View()`/encoder handli
 but not reachable: no Up+Down overlay), tap tempo, shuffle and boops (no sim commands), MIDI
 clock, skip filters (default off), trigger-map source/div/Euclid editing (defaults only).
 Scenarios: `task host:sim` (no arguments) runs `likembe_int_both_sides`,
-`likembe_int_stopped_tr1_ignored`, `likembe_int_div_note`, `likembe_src_tr1_div3`,
+`likembe_int_stopped_tr1_ignored`, `likembe_int_div_from_clocksetup`,
+`likembe_int_div_from_applet`, `likembe_src_tr1_div3`,
 `likembe_src_tr1_jack_override`, `likembe_rst_clockstart`, `likembe_rst_tr2`,
 `likembe_ext_sync_tr1`.

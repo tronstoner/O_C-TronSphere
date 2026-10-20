@@ -98,25 +98,30 @@ constexpr uint8_t kDefaultRoot = 4;           // E
 constexpr uint16_t kDefaultSeed = 1;
 
 // ---- Clock page (glue settings, custom/core/likembe_clock.h; docs/CLOCK.md) ----
-// Src: Int = the internal clock's 24-pulses-per-beat tock
-// (HS::clock_m.Tock(ClockManager::MIDI_CLOCK) while IsRunning()), identical on
-// both hemispheres, independent of the ClockSetup slot multipliers and the
-// trigger map; TRn = the physical jack, rising edge of HS::frame.gate_high[n-1].
+// Src: Int = this hemisphere's ClockSetup slot (HS::clock_m.Tock(io_offset) while
+// IsRunning(); the slot multiplier is the step rate, Clock(0) semantics for the
+// internal clock only, never the jack); TRn = the physical jack, rising edge of
+// HS::frame.gate_high[n-1].
 enum ClockSrc : uint8_t { kSrcInt = 0, kSrcTr1, kSrcTr2, kSrcTr3, kSrcTr4, kSrcCount };
-constexpr uint8_t kIntPpqn = 24;              // Src Int pulses per beat (MIDI_OUT_PPQN)
-// Div: pulses per engine step, one value per source kind (decrement counter).
-// Int 1..24 (24 = 1/4 note), TRn 1..16 (4 bits: the uint64 has no room for 5).
-constexpr uint8_t kClockDivMin = 1, kClockDivIntMax = 24, kClockDivTrMax = 16;
-constexpr uint8_t kDefaultDivInt = 6;         // 1/16 at 24 PPQN
-constexpr uint8_t kDefaultDivTr = 1;
-// Note names for Src Int Div values (pulses at 24 PPQN); other values show the number only.
-struct DivNote { uint8_t div; const char* name; };
-constexpr DivNote kDivNotes[] = {{24, "1/4"}, {16, "1/4T"}, {12, "1/8"}, {8, "1/8T"},
-                                 {6, "1/16"}, {4, "1/16T"}, {3, "1/32"}, {2, "1/32T"}};
-inline const char* DivNoteName(uint8_t div) {
-  for (const DivNote& n : kDivNotes) if (n.div == div) return n.name;
+// Src Int Div = the ClockSetup slot multiplier itself (ClockManager terms: >0 = xN,
+// <0 = /(1-N), 0 = off). The applet steps through this curated list and writes
+// HS::clock_m.SetMultiply(); ClockSetup persists it. Values outside the list
+// (set in ClockSetup) are shown as is; the next encoder step snaps into the list.
+constexpr int8_t kIntMults[] = {-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 12};   // /4 /3 /2 x1..x8 x12
+constexpr int kIntMultCount = sizeof(kIntMults) / sizeof(kIntMults[0]);
+constexpr int8_t kDefaultIntMult = 4;         // x4 = 1/16, set when the slot is off
+// Note names for slot multipliers (one beat = 1/4); other values show the multiplier only.
+struct MultNote { int8_t mult; const char* name; };
+constexpr MultNote kMultNotes[] = {{-3, "1/1"}, {-1, "1/2"}, {1, "1/4"}, {2, "1/8"}, {3, "1/8T"},
+                                   {4, "1/16"}, {6, "1/16T"}, {8, "1/32"}, {12, "1/32T"}};
+inline const char* MultNoteName(int mult) {
+  for (const MultNote& n : kMultNotes) if (n.mult == mult) return n.name;
   return nullptr;
 }
+// Src TRn Div: jack pulses per engine step (decrement counter), index into this list.
+constexpr uint8_t kTrDivs[] = {1, 2, 3, 4, 5, 6, 7, 8, 12, 16};
+constexpr uint8_t kTrDivCount = sizeof(kTrDivs);
+constexpr uint8_t kDefaultTrDivIdx = 0;       // Div 1
 // Roll: trigger input (physical jack) for an immediate re-roll. Same default on both sides.
 enum RollIn : uint8_t { kRollOff = 0, kRollTr1, kRollTr2, kRollTr3, kRollTr4, kRollCount };
 constexpr uint8_t kDefaultRoll = kRollTr2;

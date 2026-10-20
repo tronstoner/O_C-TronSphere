@@ -5,10 +5,11 @@
 // only: I/O, cursor/encoder, display, persistence. See docs/modules/likembe.md.
 //
 // Clock page (main row "Clock >"; settings in custom/core/likembe_clock.h, rules
-// in docs/CLOCK.md): Src Int = the internal clock's 24 PPQN tock
-// (HS::clock_m.Tock(MIDI_CLOCK) while running; slot multipliers never matter);
-// Src TRn = physical jack n (rising edge of HS::frame.gate_high[n-1]). Div =
-// pulses per step, stored per source kind (div_int / div_tr). Roll TRn = immediate re-roll,
+// in docs/CLOCK.md): Src Int = this hemisphere's ClockSetup slot tock
+// (HS::clock_m.Tock(io_offset) while running); its Div row IS the slot multiplier
+// (read from / written to HS::clock_m; an "off" slot is set to x4 on load).
+// Src TRn = physical jack n (rising edge of HS::frame.gate_high[n-1]), Div =
+// pulses per step from kTrDivs (persisted index). Roll TRn = immediate re-roll,
 // Rst TRn = restart at bar start. Clock start restarts via upstream Reset().
 // CV1 density mod (+-3 V = +-kDensityCvRange %), Out A velocity gate per note, Out B pitch.
 #pragma once
@@ -22,6 +23,7 @@ public:
   void Start() {
     core.Init(custom::LikembeParams::Defaults(custom::likembe::kPartBass));
     clk = custom::LikembeClock::Defaults();
+    EnsureIntMult();
     cursor = 0;
     page = false;
     pitch = core.EventAt(0).pitch_units;
@@ -94,8 +96,15 @@ public:
     if (page) {
       if (!EditMode()) { MoveCursor(page_cursor, direction, kPgLast); return; }
       switch (page_cursor) {
-        case kPgSrc:  clk.src = (uint8_t)constrain(clk.src + direction, 0, kSrcCount - 1); divider.Reset(); break;
-        case kPgDiv:  clk.SetDiv(clk.Div() + direction); break;
+        case kPgSrc:
+          clk.src = (uint8_t)constrain(clk.src + direction, 0, kSrcCount - 1);
+          divider.Reset();
+          EnsureIntMult();
+          break;
+        case kPgDiv:
+          if (clk.src == kSrcInt) HS::clock_m.SetMultiply(custom::StepIntMult(HS::clock_m.GetMultiply(io_offset), direction), io_offset);
+          else { clk.StepTrDiv(direction); divider.Reset(); }
+          break;
         case kPgRoll: clk.roll_in = (uint8_t)constrain(clk.roll_in + direction, 0, kRollCount - 1); break;
         case kPgRst:  clk.rst_in = (uint8_t)constrain(clk.rst_in + direction, 0, kRstCount - 1); break;
       }
@@ -121,6 +130,7 @@ public:
   void OnDataReceive(uint64_t data) {
     core.Init(custom::LikembeCore::UnpackParams(data));
     clk = custom::LikembeClock::Unpack(data);
+    EnsureIntMult();
     divider.Reset();
     pitch = core.EventAt(0).pitch_units;
   }
@@ -147,7 +157,8 @@ private:
   static constexpr int kPageRowY0 = 14;  // Clock page: 5 rows, 10 px pitch (14..61)
   static constexpr int kPageRowH = 10;
   static constexpr int kPageValX = 34;   // value column; cursor 29 px to x 62
-  static constexpr int kPageDivX = 22;   // Div row: "16 1/4T" = 7 chars x 6 px, x 22..63
+  static constexpr int kPageDivX = 21;   // Div row: "x6" + 2 px gap + "1/16T" lit up to x 63
+  static constexpr int kNoteGap = 2;     // px between multiplier and note name
   static int ValX(int row) { return row == kPgDiv ? kPageDivX : kPageValX; }
   static constexpr int kDensityStep = 5;
   static constexpr int kVarStep = 5;
@@ -191,15 +202,19 @@ private:
   bool Right() const { return io_offset != 0; }
   void LeavePage() { page = false; cursor = kCurClock; ResetCursor(); }
 
-  // Engine step, one every Div pulses: Src Int = 24 PPQN internal-clock tock
-  // (array read; false while stopped); Src TRn = rising edge of physical jack n.
+  // Src Int uses the slot multiplier: a slot that is off gets x4 (docs/CLOCK.md).
+  void EnsureIntMult() {
+    if (clk.src == custom::likembe::kSrcInt && HS::clock_m.GetMultiply(io_offset) == 0)
+      HS::clock_m.SetMultiply(custom::likembe::kDefaultIntMult, io_offset);
+  }
+
+  // Engine step: Src Int = this slot's internal-clock tock (array read; false
+  // while stopped; rate = slot multiplier); Src TRn = every TrDiv() jack edges.
   bool JackRose(uint8_t tr) const { return (jack_rise >> ((tr - 1) & 3)) & 1; }   // tr 1..4
   bool StepPulse() {
     using namespace custom::likembe;
-    const bool pulse = clk.src == kSrcInt
-        ? HS::clock_m.IsRunning() && HS::clock_m.Tock(ClockManager::MIDI_CLOCK)
-        : JackRose(clk.src);
-    return pulse && divider.Tick(clk.Div());
+    if (clk.src == kSrcInt) return HS::clock_m.IsRunning() && HS::clock_m.Tock(io_offset);
+    return JackRose(clk.src) && divider.Tick(clk.TrDiv());
   }
 
   // Formatting for the Clock page values (one place).
@@ -211,10 +226,19 @@ private:
     using namespace custom::likembe;
     switch (row) {
       case kPgSrc:  gfxPrint(clk.src == kSrcInt ? "Int" : InName(clk.src)); break;
-      case kPgDiv: {   // "6 1/16": count, then the note name with Src Int
-        gfxPrint(clk.Div());
-        const char* n = clk.src == kSrcInt ? DivNoteName(clk.Div()) : nullptr;
-        if (n) { gfxPrint(" "); gfxPrint(n); }
+      case kPgDiv: {   // Int: "x4 1/16" (slot multiplier + note name if it fits); TRn: "3"
+        if (clk.src != kSrcInt) { gfxPrint(clk.TrDiv()); break; }
+        char b[6];
+        const int m = HS::clock_m.GetMultiply(io_offset);
+        const char* t = custom::FormatMult(m, b);
+        gfxPrint(t);
+        const char* n = MultNoteName(m);
+        int len = 0, nl = 0;
+        while (t[len]) ++len;
+        while (n && n[nl]) ++nl;
+        const int x = kPageDivX + len * 6 + kNoteGap;
+        if (n && x + nl * 6 - 1 <= 64)   // last glyph column is blank
+          gfxPrint(x, kPageRowY0 + kPgDiv * kPageRowH, n);
         break;
       }
       case kPgRoll: gfxPrint(clk.roll_in == kRollOff ? "Off" : InName(clk.roll_in)); break;

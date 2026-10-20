@@ -42,13 +42,14 @@ th{font-weight:600;color:var(--muted)} td input{width:4.2rem} code{font:12px ui-
 <div class="muted">Same pattern engine as <code>custom/core/likembe_core.h</code> (checked by <code>task host:parity</code>). Two voices = two applet instances: Voice 1 = left hemisphere (inputs TR1, TR2), Voice 2 = right hemisphere (TR3, TR4).</div>
 
 <section>
-  <h2>Clock <span class="muted" style="font-weight:400">— internal clock (<code>docs/CLOCK.md</code>): <em>Src Int</em> = 24 pulses per beat at the BPM while running, same for both voices; <em>Src TRn</em> = the TR jack</span></h2>
+  <h2>Clock <span class="muted" style="font-weight:400">— internal clock (<code>docs/CLOCK.md</code>): <em>Src Int</em> = the voice's ClockSetup slot multiplier while running (one value: edited here or on the voice's Clock page Div); <em>Src TRn</em> = the TR jack, Div = pulses per step</span></h2>
   <div class="bar">
     <button id="play" title="ClockSetup Start/Stop (internal clock). Start also resets every applet (upstream auto_reset).">Start</button>
     <label>BPM <input id="bpm" type="number" min="20" max="300" step="1" value="82" style="width:4.5rem"></label>
     <button id="restart" title="Init both voices from their parameters (like power-on / preset load)">Init</button>
     <label>Master <input id="vol" type="range" min="0" max="1" step="0.01" value="0.7"></label>
   </div>
+  <div class="bar" style="margin-top:6px" id="mults"></div>
   <div class="bar" style="margin-top:6px" id="trs"></div>
   <div class="bar" style="margin-top:6px">
     <span class="muted">Reference only (not in the firmware):</span>
@@ -86,8 +87,8 @@ const SRC_NAMES = ['Int', 'TR1', 'TR2', 'TR3', 'TR4'], ROLL_NAMES = ['Off', 'TR1
 // One place for display formatting.
 const FMT = {
   pct: v => `${v}%`, oct: v => v > 0 ? `+${v}` : `${v}`,
-  // Clock page Div: "6 1/16" with Src Int when the value is a note, else the number.
-  div: (d, src) => src === K.kSrcInt && K.kDivNotes[d] ? `${d} ${K.kDivNotes[d]}` : `${d}`,
+  // Slot multiplier as the Clock page shows it: "x4 1/16" (note name when known).
+  mult: m => K.kMultNotes[m] ? `${E.formatMult(m)} ${K.kMultNotes[m]}` : E.formatMult(m),
   tr: n => `TR${n}`,
   pass: i => K.kPassageBars[i] ? String(K.kPassageBars[i]) : 'Off',
   volt: v => `${Number(v).toFixed(1)} V`,
@@ -125,7 +126,7 @@ function buildVoiceUI(v){
       <span></span><span class="w2 bar" style="gap:4px"><button data-a="reroll" title="Roll input / Seed encoder: new seed + passage, immediately">re-roll</button></span>
       <span class="muted" style="grid-column:1/4;margin-top:4px">Clock &gt; (page)</span>
       <span>Src</span><select data-c="src">${opt(SRC_NAMES)}</select><output data-oc="src"></output>
-      <span>Div</span><input type="number" min="1" max="24" step="1" data-c="div" title="Pulses per step, stored per source: Int 1..24 (24 PPQN: 6 = 1/16), TRn 1..16" style="width:4.5rem"><output data-oc="div"></output>
+      <span>Div</span><select data-c="div" title="Src Int: the ClockSetup slot multiplier (same control as in the Clock section). Src TRn: jack pulses per step"></select><output data-oc="div"></output>
       <span>Roll</span><select data-c="roll_in" title="Re-roll trigger input">${opt(ROLL_NAMES)}</select><output data-oc="roll_in"></output>
       <span>Rst</span><select data-c="rst_in" title="TR jack that restarts at bar start (clock start always restarts)">${opt(RST_NAMES)}</select><output data-oc="rst_in"></output>
     </div>
@@ -151,10 +152,12 @@ function buildVoiceUI(v){
   });
   el.querySelectorAll('[data-c]').forEach(inp => inp.addEventListener('change', () => {
     const k = inp.dataset.c; let val = parseInt(inp.value, 10); if (Number.isNaN(val)) return;
-    if (k === 'div') V.clk[E.clockDivKey(V.clk)] = Math.max(K.kClockDivMin, Math.min(E.clockDivMax(V.clk), val));
-    else V.clk[k] = val;
+    if (k === 'div') {
+      if (V.clk.src === K.kSrcInt) setMult(v, val);   // writes the ClockSetup slot
+      else { V.clk.div_tr_idx = val; V.divider.left = 0; }
+    } else V.clk[k] = val;
     if (k === 'src') V.divider.left = 0;   // glue: changing Src re-arms the divider
-    syncVoiceUI(v);
+    syncVoiceUI(v); syncMultUI();
   }));
   el.querySelector('[data-a=reroll]').onclick = () => { V.core.Reroll(); syncVoiceUI(v); refreshIdle(v); };
   el.querySelector('[data-a=dump]').onclick = () => dumpVoice(v);
@@ -168,13 +171,16 @@ function syncVoiceUI(v){
   });
   V.el.querySelector('[data-o=density_pct]').textContent = FMT.pct(p.density_pct);
   V.el.querySelector('[data-o=variation_pct]').textContent = FMT.pct(p.variation_pct);
-  const c = V.clk, divIn = V.el.querySelector('[data-c=div]');
-  const div = c[E.clockDivKey(c)];
+  const c = V.clk, divIn = V.el.querySelector('[data-c=div]'), isInt = c.src === K.kSrcInt;
+  const kind = isInt ? 'int' : 'tr';
+  if (divIn.dataset.kind !== kind) {   // option list follows Src
+    divIn.dataset.kind = kind;
+    divIn.innerHTML = isInt ? multOptions() : K.kTrDivs.map((d, i) => `<option value="${i}">${d}</option>`).join('');
+  }
   V.el.querySelectorAll('[data-c]').forEach(inp => {
-    if (document.activeElement !== inp) inp.value = String(inp.dataset.c === 'div' ? div : c[inp.dataset.c]);
+    if (document.activeElement !== inp) inp.value = String(inp.dataset.c === 'div' ? (isInt ? clockS.mult[v] : c.div_tr_idx) : c[inp.dataset.c]);
   });
-  divIn.max = String(E.clockDivMax(c));
-  V.el.querySelector('[data-oc=div]').textContent = FMT.div(div, c.src);
+  V.el.querySelector('[data-oc=div]').textContent = isInt ? `slot ${2 * v + 1}` : '';
 }
 
 // ---------------- snapshots (what the module display shows at a pulse) ----------------
@@ -356,11 +362,23 @@ function claveAt(t, p, B){
 }
 const bpm = () => Math.max(20, Math.min(300, +$('#bpm').value || 82));
 const beat = () => 60 / bpm();
-// ---- Internal clock model (HSClockManager.h MIDI_CLOCK tock): 24 pulses per beat on a grid
-// from the start time t0, first pulse at t0. ClockSetup slot multipliers do not matter.
-const clockS = {running: false, t0: 0, startAt: null, next: 0, last: 0};
-const intPeriod = () => beat() / K.kIntPpqn;
-function gridNext(t){ const P = intPeriod(); return clockS.t0 + Math.max(0, Math.ceil((t - clockS.t0) / P - 1e-9)) * P; }
+// ---- Internal clock model (HSClockManager.h Tock(slot)): per voice, its ClockSetup slot
+// multiplier (voice 1 = slot 1, voice 2 = slot 3) on a grid from the start time t0, first
+// tock at t0. xN = N per beat, /N = one per N beats. Both voices load on Src Int, so each
+// slot starts at x4 (the applet sets x4 on an "off" slot; "off" is not offered here).
+const clockS = {running: false, t0: 0, startAt: null, next: [0, 0], last: 0, mult: [K.kDefaultIntMult, K.kDefaultIntMult]};
+const intPeriod = v => { const m = clockS.mult[v]; return m > 0 ? beat() / m : beat() * (1 - m); };
+function gridNext(v, t){ const P = intPeriod(v); return clockS.t0 + Math.max(0, Math.ceil((t - clockS.t0) / P - 1e-9)) * P; }
+const multOptions = () => K.kIntMults.map(m => `<option value="${m}">${FMT.mult(m)}</option>`).join('');
+// HS::clock_m.SetMultiply(): one value per slot, shown in the Clock section and on the voice.
+function setMult(v, m){
+  clockS.mult[v] = m;
+  if (clockS.running && ac) clockS.next[v] = gridNext(v, Math.max(ac.currentTime, clockS.last) + 1e-6);
+}
+function syncMultUI(){
+  document.querySelectorAll('[data-mult]').forEach(s => { s.value = String(clockS.mult[+s.dataset.mult]); });
+  voices.forEach((V, v) => { if (V.el) syncVoiceUI(v); });
+}
 // ---- TR inputs: manual pulses + steady 4 PPQN at the BPM ----
 const trS = {steady: [false, false, false, false], next: [0, 0, 0, 0], queue: [[], [], [], []]};
 const active = () => clockS.running || trS.steady.some(x => x);
@@ -374,13 +392,13 @@ function tickRef(){
 }
 // Likembe::Reset(): bar start, figures kept; divider re-armed; next interval not measured.
 function resetVoice(V){ V.core.Reset(); V.divider.left = 0; V.havePulse = false; }
-// One ISR instant. intTock = the 24 PPQN internal-clock pulse (only while running). started =
+// One ISR instant. intTock[v] = voice v's slot tock (only while running). started =
 // the tick after ClockManager::Start() (APP_HEMISPHERE auto_reset: Reset() on every applet).
 // jack[ch] = rising edge on physical TR ch+1 (frame.gate_high): the TR buttons / TR test
 // clock only. Src/Roll/Rst TRn read jack[], Src Int reads intTock.
 function processFrame(t, intTock, jack, started){
   if (started) voices.forEach(resetVoice);
-  voices.forEach(V => glue(V, t, intTock, jack));
+  voices.forEach((V, v) => glue(V, t, intTock[v], jack));
 }
 // Port of Likembe::Controller() clock handling, same order.
 function glue(V, t, intTock, jack){
@@ -388,7 +406,7 @@ function glue(V, t, intTock, jack){
   if (c.roll_in !== K.kRollOff && jack[c.roll_in - K.kRollTr1]) V.core.Reroll();
   if (c.rst_in !== K.kRstOff && jack[c.rst_in - K.kRstTr1]) resetVoice(V);
   const pulse = c.src === K.kSrcInt ? !!intTock : !!jack[c.src - K.kSrcTr1];
-  const step = pulse && E.pulseDividerTick(V.divider, c[E.clockDivKey(c)]);
+  const step = c.src === K.kSrcInt ? pulse : pulse && E.pulseDividerTick(V.divider, E.clockTrDiv(c));
   if (!step) return;
   if (V.havePulse) V.stepDur = Math.min(t - V.lastStepT, 10);   // kMaxPulseTicks = 10 s
   V.havePulse = true; V.lastStepT = t;
@@ -410,12 +428,13 @@ function tick(){
       if (trS.steady[ch]) t = Math.min(t, trS.next[ch]);
       if (trS.queue[ch].length) t = Math.min(t, trS.queue[ch][0]);
     }
-    if (clockS.running) t = Math.min(t, clockS.next);
+    if (clockS.running) t = Math.min(t, clockS.next[0], clockS.next[1]);
     if (clockS.startAt !== null) t = Math.min(t, clockS.startAt);
     if (!(t < horizon)) break;
     const tr = [0, 0, 0, 0];
-    let intTock = 0;
-    if (clockS.running && clockS.next <= t + EPS) { intTock = 1; clockS.next += intPeriod(); }
+    const intTock = [0, 0];
+    for (let v = 0; v < 2; ++v)
+      if (clockS.running && clockS.next[v] <= t + EPS) { intTock[v] = 1; clockS.next[v] += intPeriod(v); }
     for (let ch = 0; ch < 4; ++ch) {
       if (trS.steady[ch] && trS.next[ch] <= t + EPS) { tr[ch] = 1; trS.next[ch] += beat() / 4; }
       while (trS.queue[ch].length && trS.queue[ch][0] <= t + EPS) { trS.queue[ch].shift(); tr[ch] = 1; }
@@ -436,12 +455,12 @@ async function togglePlay(){
   await ensureAudio();
   if (!clockS.running) {   // ClockManager::Start(): Reset(), first tock now
     const t0 = ac.currentTime + .06;
-    clockS.running = true; clockS.t0 = t0; clockS.startAt = t0; clockS.next = t0;
+    clockS.running = true; clockS.t0 = t0; clockS.startAt = t0; clockS.next = [t0, t0];
     refNext = t0; refStep = 0;
   } else {                 // Stop()
     clockS.running = false; clockS.startAt = null;
     const t = Math.max(ac.currentTime, clockS.last);
-    processFrame(t, 0, [0, 0, 0, 0], false);
+    processFrame(t, [0, 0], [0, 0, 0, 0], false);
     voices.forEach(V => { if (V.cur) V.cur.g.gain.setTargetAtTime(0, ac.currentTime, .02); });
   }
   $('#play').textContent = clockS.running ? 'Stop' : 'Start'; $('#play').classList.toggle('on', clockS.running);
@@ -450,10 +469,14 @@ async function togglePlay(){
 function buildClockUI(){
   $('#bpm').addEventListener('change', () => {   // new tempo from the next grid point (phase restarts there)
     if (!clockS.running || !ac) return;
-    const t = clockS.next;
-    clockS.t0 = t; clockS.next = gridNext(t);
+    const t = Math.min(clockS.next[0], clockS.next[1]);
+    clockS.t0 = t; clockS.next = [gridNext(0, t), gridNext(1, t)];
     refNext = t; refStep = 0;
   });
+  $('#mults').innerHTML = '<span class="muted">ClockSetup multipliers:</span>' + [0, 1].map(v =>
+    `<label>Voice ${v + 1} (slot ${2 * v + 1}) <select data-mult="${v}" title="HS::clock_m.SetMultiply(m, slot): Src Int step rate">${multOptions()}</select></label>`).join('');
+  document.querySelectorAll('[data-mult]').forEach(s => s.onchange = () => { setMult(+s.dataset.mult, parseInt(s.value, 10)); syncMultUI(); });
+  syncMultUI();
   $('#trs').innerHTML = '<span class="muted">TR inputs:</span>' + [1, 2, 3, 4].map(n =>
     `<span class="bar" style="gap:4px">${FMT.tr(n)} <button data-trp="${n - 1}">pulse</button><label><input type="checkbox" data-trs="${n - 1}"> steady</label></span>`).join('');
   document.querySelectorAll('[data-trp]').forEach(b => b.onclick = async () => {

@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Ralf Traunsteiner
-// likembe_clock.h -- Likembe Clock page settings (Src, Div per source, Roll, Rst)
+// likembe_clock.h -- Likembe Clock page settings (Src, TRn Div, Roll, Rst)
 // and the pulse divider. Glue-level (the pattern core never sees them), kept here
 // so they compile and test on the host. Rules: docs/CLOCK.md; page: docs/modules/likembe.md.
 #pragma once
@@ -9,58 +9,93 @@
 
 namespace custom {
 
-// Packed into bits 48..63 of the applet's uint64 (the core uses all of 0..47):
-//  48..54 inputs (7): src + 5 * roll_in + 25 * rst_in (each 0..4); 125..127 -> defaults
-//  55..59 div_int - 1 (5; 24..31 -> 24)
-//  60..63 div_tr - 1 (4; 1..16)
-// src/roll/rst share one base-5 field: three 3-bit fields plus two 5-bit Divs
-// would need 19 bits, only 16 are free.
+// Packed into bits 48..60 of the applet's uint64 (the core uses all of 0..47):
+//  48..50 src (3)         likembe::ClockSrc, >= kSrcCount -> Int
+//  51..53 roll_in (3)     likembe::RollIn,   >= kRollCount -> default
+//  54..56 rst_in (3)      likembe::RstIn,    >= kRstCount -> Off
+//  57..60 div_tr_idx (4)  index into kTrDivs, >= kTrDivCount -> default
+//  61..63 unused (0)
+// The Src Int Div is the ClockSetup slot multiplier; ClockSetup persists it, not us.
 struct LikembeClock {
   static constexpr int kShift = 48;
-  uint8_t src;      // likembe::ClockSrc
-  uint8_t div_int;  // pulses per step with Src Int, kClockDivMin..kClockDivIntMax
-  uint8_t div_tr;   // pulses per step with Src TRn, kClockDivMin..kClockDivTrMax
-  uint8_t roll_in;  // likembe::RollIn
-  uint8_t rst_in;   // likembe::RstIn
+  uint8_t src;         // likembe::ClockSrc
+  uint8_t div_tr_idx;  // Src TRn: pulses per step = kTrDivs[div_tr_idx]
+  uint8_t roll_in;     // likembe::RollIn
+  uint8_t rst_in;      // likembe::RstIn
 
   static LikembeClock Defaults() {
     using namespace likembe;
-    return {kSrcInt, kDefaultDivInt, kDefaultDivTr, kDefaultRoll, kRstOff};
+    return {kSrcInt, kDefaultTrDivIdx, kDefaultRoll, kRstOff};
   }
-  // Div for the current Src.
-  uint8_t Div() const { return src == likembe::kSrcInt ? div_int : div_tr; }
-  uint8_t DivMax() const { return src == likembe::kSrcInt ? likembe::kClockDivIntMax : likembe::kClockDivTrMax; }
-  void SetDiv(int v) {
-    if (v < likembe::kClockDivMin) v = likembe::kClockDivMin;
-    if (v > DivMax()) v = DivMax();
-    (src == likembe::kSrcInt ? div_int : div_tr) = (uint8_t)v;
+  uint8_t TrDiv() const { return likembe::kTrDivs[div_tr_idx < likembe::kTrDivCount ? div_tr_idx : 0]; }
+  void StepTrDiv(int dir) {
+    int i = div_tr_idx + dir;
+    if (i < 0) i = 0;
+    if (i >= likembe::kTrDivCount) i = likembe::kTrDivCount - 1;
+    div_tr_idx = (uint8_t)i;
   }
   void Clamp() {
     using namespace likembe;
     if (src >= kSrcCount) src = kSrcInt;
     if (roll_in >= kRollCount) roll_in = kDefaultRoll;
     if (rst_in >= kRstCount) rst_in = kRstOff;
-    if (div_int < kClockDivMin) div_int = kClockDivMin;
-    if (div_int > kClockDivIntMax) div_int = kClockDivIntMax;
-    if (div_tr < kClockDivMin) div_tr = kClockDivMin;
-    if (div_tr > kClockDivTrMax) div_tr = kClockDivTrMax;
+    if (div_tr_idx >= kTrDivCount) div_tr_idx = kDefaultTrDivIdx;
   }
   uint64_t Pack() const {
-    const uint64_t in = (uint64_t)(src % 5) + 5u * (roll_in % 5) + 25u * (rst_in % 5);
-    const uint64_t d = in | (uint64_t)((div_int - 1) & 0x1F) << 7 | (uint64_t)((div_tr - 1) & 0xF) << 12;
+    const uint64_t d = (uint64_t)(src & 7) | (uint64_t)(roll_in & 7) << 3 |
+                       (uint64_t)(rst_in & 7) << 6 | (uint64_t)(div_tr_idx & 0xF) << 9;
     return d << kShift;
   }
   static LikembeClock Unpack(uint64_t d) {
     d >>= kShift;
-    LikembeClock c = Defaults();
-    const uint8_t in = (uint8_t)(d & 0x7F);
-    if (in < 125) { c.src = in % 5; c.roll_in = (in / 5) % 5; c.rst_in = in / 25; }
-    c.div_int = (uint8_t)(((d >> 7) & 0x1F) + 1);
-    c.div_tr = (uint8_t)(((d >> 12) & 0xF) + 1);
+    LikembeClock c;
+    c.src = (uint8_t)(d & 7);
+    c.roll_in = (uint8_t)((d >> 3) & 7);
+    c.rst_in = (uint8_t)((d >> 6) & 7);
+    c.div_tr_idx = (uint8_t)((d >> 9) & 0xF);
     c.Clamp();
     return c;
   }
 };
+
+// Src Int Div encoder step over likembe::kIntMults. A value in the list moves one
+// entry (clamped at the ends); a value outside it (e.g. x9 or off from ClockSetup)
+// snaps to the nearest entry in the direction of travel. |dir| > 1 = that many steps.
+inline int8_t StepIntMult1(int cur, int dir) {
+  using namespace likembe;
+  int idx = -1;
+  for (int i = 0; i < kIntMultCount; ++i) if (kIntMults[i] == cur) idx = i;
+  if (idx >= 0) {
+    idx += dir > 0 ? 1 : -1;
+    if (idx < 0) idx = 0;
+    if (idx >= kIntMultCount) idx = kIntMultCount - 1;
+    return kIntMults[idx];
+  }
+  if (dir > 0) {
+    for (int i = 0; i < kIntMultCount; ++i) if (kIntMults[i] > cur) return kIntMults[i];
+    return kIntMults[kIntMultCount - 1];
+  }
+  for (int i = kIntMultCount - 1; i >= 0; --i) if (kIntMults[i] < cur) return kIntMults[i];
+  return kIntMults[0];
+}
+
+inline int8_t StepIntMult(int cur, int dir) {
+  int8_t m = (int8_t)cur;
+  for (int n = dir < 0 ? -dir : dir; n > 0; --n) m = StepIntMult1(m, dir);
+  return dir == 0 ? (int8_t)cur : m;
+}
+
+// ClockSetup notation into buf (>= 5 chars): "x4", "/2", "off". Integer only.
+inline const char* FormatMult(int m, char* buf) {
+  if (m == 0) { buf[0] = 'o'; buf[1] = 'f'; buf[2] = 'f'; buf[3] = 0; return buf; }
+  int v = m > 0 ? m : 1 - m;
+  int n = 0;
+  buf[n++] = m > 0 ? 'x' : '/';
+  if (v >= 10) buf[n++] = (char)('0' + v / 10);
+  buf[n++] = (char)('0' + v % 10);
+  buf[n] = 0;
+  return buf;
+}
 
 // One step every `div` input pulses, decrement only: fires on the first pulse
 // after Reset(); a Div lowered below the remaining count fires on the next pulse.

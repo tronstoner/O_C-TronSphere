@@ -26,10 +26,12 @@ const C = {
   kDensityMax: 100, kOctaveMin: -2, kOctaveMax: 3, kDefaultOctave: 0, kVariationMax: 100,
   kDensityCvRange: 35,
   kPassageBars: [0, 1, 2, 3, 4, 5, 6, 7, 8],
-  // Clock page (glue): ClockSrc, kClockDiv*, RollIn, RstIn
-  kSrcInt: 0, kSrcTr1: 1, kSrcCount: 5, kIntPpqn: 24,
-  kClockDivMin: 1, kClockDivIntMax: 24, kClockDivTrMax: 16, kDefaultDivInt: 6, kDefaultDivTr: 1,
-  kDivNotes: {24: '1/4', 16: '1/4T', 12: '1/8', 8: '1/8T', 6: '1/16', 4: '1/16T', 3: '1/32', 2: '1/32T'},
+  // Clock page (glue): ClockSrc, Src Int = ClockSetup slot multiplier (kIntMults,
+  // ClockManager terms: >0 = xN, <0 = /(1-N)), Src TRn Div = kTrDivs, RollIn, RstIn
+  kSrcInt: 0, kSrcTr1: 1, kSrcCount: 5,
+  kIntMults: [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 12], kDefaultIntMult: 4,
+  kMultNotes: {'-3': '1/1', '-1': '1/2', 1: '1/4', 2: '1/8', 3: '1/8T', 4: '1/16', 6: '1/16T', 8: '1/32', 12: '1/32T'},
+  kTrDivs: [1, 2, 3, 4, 5, 6, 7, 8, 12, 16], kDefaultTrDivIdx: 0,
   kRollOff: 0, kRollTr1: 1, kRollCount: 5, kDefaultRoll: 2,
   kRstOff: 0, kRstTr1: 1, kRstCount: 5, kDefaultRst: 0,
   kDefaultPulseTicks: 2083, kTickHz: 16666,   // gate length % = lab.gatePct (kGateLengthPct)
@@ -387,13 +389,15 @@ function dump(params, bars, lab) {
 }
 
 // ---- custom/core/likembe_clock.h (glue-level Clock page) ----
-// LikembeClock::Defaults(): Src Int, Div Int 6 / Div TR 1, Roll TR2, Rst Off (both sides).
+// LikembeClock::Defaults(): Src Int, TR Div index 0 (= 1), Roll TR2, Rst Off (both sides).
+// The Src Int Div is not here: it is the ClockSetup slot multiplier (lab: clock model).
 function clockDefaults() {
-  return {src: C.kSrcInt, div_int: C.kDefaultDivInt, div_tr: C.kDefaultDivTr, roll_in: C.kDefaultRoll, rst_in: C.kDefaultRst};
+  return {src: C.kSrcInt, div_tr_idx: C.kDefaultTrDivIdx, roll_in: C.kDefaultRoll, rst_in: C.kDefaultRst};
 }
-// LikembeClock::Div() / DivMax(): the Div of the current Src.
-function clockDivKey(c) { return c.src === C.kSrcInt ? 'div_int' : 'div_tr'; }
-function clockDivMax(c) { return c.src === C.kSrcInt ? C.kClockDivIntMax : C.kClockDivTrMax; }
+// LikembeClock::TrDiv(): jack pulses per step with Src TRn.
+function clockTrDiv(c) { return C.kTrDivs[c.div_tr_idx] || 1; }
+// ClockSetup notation: x4, /2, off.
+function formatMult(m) { return m === 0 ? 'off' : m > 0 ? `x${m}` : `/${1 - m}`; }
 // PulseDivider::Tick, 1:1: fires on the first pulse after reset (left = 0), then
 // every div pulses; a div lowered below the remaining count fires on the next pulse.
 function pulseDividerTick(d, div) {   // d = {left}
@@ -403,6 +407,6 @@ function pulseDividerTick(d, div) {   // d = {left}
   return fire;
 }
 
-const E = {C, Core, labDefaults, cloneLab, defaults, clampParams, dump, clockDefaults, clockDivKey, clockDivMax, pulseDividerTick};
+const E = {C, Core, labDefaults, cloneLab, defaults, clampParams, dump, clockDefaults, clockTrDiv, formatMult, pulseDividerTick};
 if (typeof module !== 'undefined' && module.exports) module.exports = E; else root.LikembeEngine = E;
 })(typeof window !== 'undefined' ? window : this);
