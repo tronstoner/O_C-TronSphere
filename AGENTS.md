@@ -130,6 +130,14 @@ Proposal quality:
   impl plan listing every execution-model divergence (event vs polling, exact vs noisy
   inputs, atomic vs multi-tick state changes).
 
+### Sandbox — where agents may act
+- Agents read and write only inside this repository, the session scratchpad, `~/.platformio`
+  and `~/.nvm`. No file searches or listings outside these paths.
+- Never launch GUI applications or browsers (headless included). They touch protected user
+  folders and trigger macOS access prompts. Lab pages are verified with node syntax checks
+  and node scripts; browser checks are done by the user.
+- Hardware tools (`task flash`, serial) only on the user's explicit request.
+
 ### Git
 - **Only the main agent commits**, only on the current feature branch. **Commit savepoints
   during work** (after each coherent step that builds, at the latest when host tests pass);
