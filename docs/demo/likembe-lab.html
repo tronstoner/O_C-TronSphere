@@ -264,7 +264,7 @@ function render(V, now){
     `L ${fig(L)}  n ${L.n}  phase ${L.phase}  deg ${L.deg.join(' ')}\n` +
     `R ${fig(R)}  n ${R.n}  phase ${R.phase}  deg ${R.deg.join(' ')}\n` +
     `cycle ${s.cycle_bar_idx}/${s.cycle_bars}  seed ${s.seed}  roll ${s.pass ? `${s.bar_in_passage}/${s.pass}` : `Off (${s.bar_in_passage})`}` +
-    `${s.theme ? '  ~theme' : ''}${s.lab_pending ? '  +lab' : ''}`;
+    `${s.theme ? '  ~theme' : ''}${s.lab_pending ? '  +lab' : ''}${V.core.lab.loopCap ? '  cap:Len' : ''}`;
   if (document.activeElement !== V.el.querySelector('[data-k=seed]')) V.el.querySelector('[data-k=seed]').value = String(s.seed);
 }
 
@@ -528,6 +528,7 @@ function buildLab(){
   });
   GLOB.forEach((r, i) => { h += `<tr><td>${r[0]} <em class="muted">live</em></td><td><code>${r[1]}</code></td><td colspan="4"><input type="number" min="${r[3]}" max="${r[4]}" step="${r[5]}" data-glob="${i}"> <span class="muted" data-gv="${i}"></span></td></tr>`; });
   h += `<tr><td>${LSTART[0]}</td><td><code>${LSTART[1]}</code></td><td colspan="4"><select data-lstart="1"><option value="false">lowest (false)</option><option value="true">middle (true)</option></select></td></tr>`;
+  h += `<tr><td>Loop cap (lab prototype, not in firmware)</td><td><code>-</code></td><td colspan="4"><select data-loopcap="1"><option value="false">Off</option><option value="true">Len</option></select></td></tr>`;
   $('#lab').innerHTML = h;
   $('#lab').addEventListener('change', e => {
     const el = e.target;
@@ -540,6 +541,8 @@ function buildLab(){
       el.value = v; lab[r[2]] = v;
     } else if (el.dataset.lstart) {
       lab.lStartMiddle = el.value === 'true';
+    } else if (el.dataset.loopcap) {
+      lab.loopCap = el.value === 'true';
     } else return;
     pushLab(); syncLab();
   });
@@ -549,12 +552,13 @@ function syncLab(){
   document.querySelectorAll('[data-per]').forEach(el => { el.value = getP(+el.dataset.part, PER[+el.dataset.per][2]); });
   document.querySelectorAll('[data-glob]').forEach(el => { el.value = lab[GLOB[+el.dataset.glob][2]]; });
   $('[data-lstart]').value = String(lab.lStartMiddle);
+  $('[data-loopcap]').value = String(!!lab.loopCap);
   $('[data-gv="0"]').textContent = `velocity ${(velOf(true)).toFixed(2)}`;
   $('[data-gv="1"]').textContent = `velocity ${(velOf(false)).toFixed(2)}`;
   $('[data-gv="2"]').textContent = '';
 }
 function pushLab(){   // engine constants at the next bar line (immediately when stopped)
-  voices.forEach((V, v) => { if (active()) V.core.setLab(lab); else { V.core.lab = E.cloneLab(lab); V.core.labPending = null; refreshIdle(v); } });
+  voices.forEach((V, v) => { if (active()) V.core.setLab(lab); else { V.core.lab = E.cloneLab(lab); V.core.labPending = null; V.core.ApplyCap(); refreshIdle(v); } });
 }
 function exportConstants(){
   const parts = K.kPartNames, out = ['// likembe_constants.h -- values from the Likembe browser lab'];
@@ -571,6 +575,7 @@ function exportConstants(){
   parts.forEach((n, p) => out.push(`  ${arr(lab.parts[p].stepW)},${' '.repeat(Math.max(1, 22 - arr(lab.parts[p].stepW).length))}// ${n}`));
   out.push('};');
   out.push(`constexpr bool kThumbLStartMiddle = ${lab.lStartMiddle};`);
+  if (lab.loopCap) out.push('// Loop cap = Len -- needs a core change');
   emit('uint8_t kMutWeight', '[4]', p => lab.parts[p].mutW, 'key, rest, octave, loop length');
   emit('uint8_t kOctaveHeadroom', '', p => lab.parts[p].headroom);
   emit('uint8_t kReturnToThemePct', '', p => lab.parts[p].ret);
@@ -586,7 +591,7 @@ function exportConstants(){
 function dumpVoice(v){
   const V = voices[v], p = V.core.params, labNow = active() && V.core.labPending ? V.core.labPending : V.core.lab;
   const args = `--seed ${p.seed} --part ${p.part} --dens ${p.density_pct} --root ${p.root} --oct ${p.octave} --len ${p.len} --var ${p.variation_pct} --pass ${p.passage_idx} --bars ${V.dumpBars}`;
-  const fw = JSON.stringify(labNow.parts[p.part]) === JSON.stringify(E.labDefaults().parts[p.part]) && labNow.lStartMiddle === E.labDefaults().lStartMiddle;   // velocities/gate do not affect events
+  const fw = JSON.stringify(labNow.parts[p.part]) === JSON.stringify(E.labDefaults().parts[p.part]) && labNow.lStartMiddle === E.labDefaults().lStartMiddle && !labNow.loopCap;   // velocities/gate do not affect events
   const o = $('#dumpOut'); o.hidden = false;
   o.textContent = `# voice ${v + 1}: ${args}${fw ? '' : '  (lab values differ from firmware: C++ tool will not match)'}\n` + E.dump(p, V.dumpBars, labNow);
 }

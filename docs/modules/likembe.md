@@ -188,6 +188,7 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
   `likembe_constants.h` format (`kStepWeight[kPartCount][5]`, `kThumbLStartMiddle`); a
   global-only value that differs between parts is printed as a per-part table with a note
   that the core needs a change for it.
+- **Loop cap: Off | Len** (lab prototype, not in firmware; default Off): each thumb loop n <= min(Len, `kMaxLoop`) at generation, loop-length mutation and at once when Len drops or the cap is switched on (loop + theme truncated); shows `cap:Len`, exports a core-change note, flags Dump.
 - **Dump events:** N bars from Init with the voice's current parameters, in the parity format,
   headed by the equivalent `likembe_dump` arguments (flagged when lab values differ from firmware).
 

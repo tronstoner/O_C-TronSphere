@@ -38,11 +38,12 @@ const C = {
 // Lab-exposed constants. Per part (index = Part); stepW mirrors kStepWeight[kPartCount][5],
 // the others are one global in the firmware (export prints a global when all parts agree).
 // lStartMiddle mirrors kThumbLStartMiddle (thumb L starts at c / 2 instead of key 0).
+// loopCap: lab prototype, not in firmware -- each thumb loop n <= min(Len, kMaxLoop).
 function labDefaults() {
   const stepW = [[30, 70, 12, 8, 8], [20, 70, 12, 5, 10], [30, 70, 12, 8, 8], [30, 70, 12, 8, 8]];
   const part = p => ({stepW: stepW[p].slice(), mutW: [30, 20, 6, 5],
     ret: 30, loopChange: 40, headroom: 2});
-  return {parts: [part(0), part(1), part(2), part(3)], lStartMiddle: true, accentV: 5, normalV: 3, gatePct: 50};
+  return {parts: [part(0), part(1), part(2), part(3)], lStartMiddle: true, loopCap: false, accentV: 5, normalV: 3, gatePct: 50};
 }
 const cloneLab = l => JSON.parse(JSON.stringify(l));
 
@@ -104,7 +105,19 @@ class Core {
   }
   L() { return this.lab.parts[this.active_part]; }
   // Lab constants change at the next bar line (like a firmware rebuild would, minus the reset).
-  setLab(lab) { this.labPending = cloneLab(lab); }
+  setLab(lab) {
+    this.labPending = cloneLab(lab);
+    if (lab.loopCap && !this.lab.loopCap) { this.lab.loopCap = true; this.ApplyCap(); }   // cap on: truncate at once
+  }
+  Cap() { return this.lab.loopCap ? clampI(this.params.len, C.kMinLoop, C.kMaxLoop) : C.kMaxLoop; }
+  AllMask() { let a = 0; for (let n = C.kMinLoop; n <= this.Cap(); ++n) a |= bit(n); return a >>> 0; }
+  ApplyCap() {   // truncate live loops and theme copies to the cap, phase wrapped
+    const cap = this.Cap();
+    for (const t of [...this.thumb, ...this.theme]) if (t.n > cap) {
+      for (let j = cap; j < C.kMaxLoop; ++j) t.e[j] = {degree: 0, draw: 0};
+      t.n = cap; t.phase = t.phase % cap;
+    }
+  }
 
   Init(p) { this.params = clampParams(p); this.Regenerate(false); }
   SetParams(p) {
@@ -192,10 +205,9 @@ class Core {
   }
   Keys(th) { const out = []; for (let d = this.key_lo; d <= this.key_hi; ++d) if ((d & 1) === th) out.push(d); return out; }
   IsFit(n) { return this.pulses_per_bar % (2 * n) === 0; }
-  FitMask() { let f = 0; for (let n = C.kMinLoop; n <= C.kMaxLoop; ++n) if (this.IsFit(n)) f |= bit(n); return (f & (f - 1)) ? f >>> 0 : Core.AllMask(); }
-  static AllMask() { let a = 0; for (let n = C.kMinLoop; n <= C.kMaxLoop; ++n) a |= bit(n); return a >>> 0; }
+  FitMask() { let f = 0; for (let n = C.kMinLoop; n <= this.Cap(); ++n) if (this.IsFit(n)) f |= bit(n); return (f & (f - 1)) ? f >>> 0 : this.AllMask(); }
   AllowedMask(other) {
-    const all = Core.AllMask(), fit = this.FitMask();
+    const all = this.AllMask(), fit = this.FitMask();
     switch (this.Profile().policy) {
       case C.kPolicyBothDrift: return all;
       case C.kPolicyOneDrift: return (fit & bit(other)) ? all : fit;
@@ -238,12 +250,13 @@ class Core {
     this.rng_part = {s: seedState(u32(p.seed + C.kPartStreamOffset * p.part))};
     this.rng_passage = {s: seedState(u32(p.seed + C.kPassageStreamOffset))};
     const d = p.len === 16 ? this.Profile().loops16 : (p.len === 12 ? this.Profile().loops12 : null);
-    if (d) { this.thumb[0].n = d[0]; this.thumb[1].n = d[1]; } else this.RollLoopLengths();
+    if (d) { const cap = this.Cap(); this.thumb[0].n = Math.min(d[0], cap); this.thumb[1].n = Math.min(d[1], cap); } else this.RollLoopLengths();
     this.GenPart();
+    this.ApplyCap();
     if (keepPos) this.bar_in_passage = bip;
   }
   RollLoopLengths() {
-    const f = this.FitMask(), all = Core.AllMask(), r = this.rng_passage;
+    const f = this.FitMask(), all = this.AllMask(), r = this.rng_passage;
     let l, rr;
     switch (this.Profile().policy) {
       case C.kPolicyFit:
