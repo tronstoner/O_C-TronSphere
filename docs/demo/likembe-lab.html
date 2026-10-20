@@ -98,7 +98,7 @@ const FMT = {
   pass: i => K.kPassageBars[i] ? String(K.kPassageBars[i]) : 'Off',
   volt: v => `${Number(v).toFixed(1)} V`,
 };
-let lab = E.labDefaults();          // live lab state (UI); cores get it at the bar line
+let lab = Object.assign(E.labDefaults(), {loopCap: true});   // live lab state (UI); prototype under test ON by default
 const UNITS_PER_VOLT = 1536;
 
 // ---------------- voices ----------------
@@ -604,7 +604,7 @@ voices.forEach((_, v) => refreshIdle(v));
 $('#play').onclick = togglePlay;
 $('#vol').oninput = () => { if (master) master.gain.setTargetAtTime(+$('#vol').value * .5, ac.currentTime, .02); };
 $('#restart').onclick = () => voices.forEach((V, v) => { V.core.Init(V.core.params); V.last = null; V.snaps = []; syncVoiceUI(v); refreshIdle(v); });
-$('#labReset').onclick = () => { lab = E.labDefaults(); pushLab(); syncLab(); };
+$('#labReset').onclick = () => { lab = Object.assign(E.labDefaults(), {loopCap: true}); pushLab(); syncLab(); };
 $('#export').onclick = exportConstants;
 requestAnimationFrame(frameLoop);
 })();

@@ -99,7 +99,8 @@ Exception to the "go" rule: trivial numeric or obvious choices inside an approve
 
 Engine model changes (anything that alters how a module generates its output, not just a
 constant): prototype in the module's browser lab first as a switchable option, user listens
-and decides, only then port to the core. 2026-10-20: a core-first model change destroyed the
+and decides, only then port to the core. The option under test is ON by default when the lab
+opens; the user must not have to find and enable it. 2026-10-20: a core-first model change destroyed the
 Likembe character and was reverted.
 
 Proposal quality:
