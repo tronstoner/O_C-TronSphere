@@ -97,6 +97,14 @@ A user message that contains new input while an implementation is running is dis
 not a change of the running task; stop and go back to phase 2 if the input affects it.
 Exception to the "go" rule: trivial numeric or obvious choices inside an approved task.
 
+Proposal quality:
+- Every code fact a proposal relies on (what an API returns, what the framework already does)
+  is verified in the source before the proposal is presented. Never build a proposal on memory
+  or on another agent's summary.
+- A brief to a subagent states the **intent** and the mechanism. If the mechanism turns out to
+  contradict the intent, the subagent implements the intent and reports the deviation as done.
+  Only genuine design decisions are escalated to the user.
+
 ### Reporting
 - Plain technical English. No jargon without a one-line definition the first time (e.g. say
   "Phazerville's Hemisphere app" instead of "upstream" when it matters which code is meant).
