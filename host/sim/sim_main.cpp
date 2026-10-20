@@ -36,6 +36,7 @@ static void Usage() {
       "  --ticks N       run N ticks\n"
       "  --inK V         set CV input K (0..3) in pitch units (1536 = 1 V)\n"
       "  --gateK 0|1     set digital input K (0..3)\n"
+      "  --to L|R        following --encoder/--press/--expect-state act on that side\n"
       "  --encoder N     N encoder detents (+/-)\n"
       "  --press         encoder button press (toggles edit mode)\n"
       "  --out DIR       output dir for sim.pbm / sim_x4.pgm (default .)\n"
@@ -229,7 +230,7 @@ int main(int argc, char **argv) {
   if (!have_right) right_name = sides.find('R') != std::string::npos ? "Hello" : "none";
   auto opt = [](const std::string &n) { return n == "none" ? nullptr : n.c_str(); };
   if (!simcore::Init(opt(left_name), opt(right_name))) return 2;
-  const simcore::Side side = simcore::Active(simcore::kLeft) || !simcore::Active(simcore::kRight)
+  simcore::Side side = simcore::Active(simcore::kLeft) || !simcore::Active(simcore::kRight)
                                  ? simcore::kLeft : simcore::kRight;
   if (!csv_path.empty()) {
     log.csv = std::fopen(csv_path.c_str(), "w");
@@ -303,6 +304,7 @@ int main(int argc, char **argv) {
     }
     else if (a.rfind("--in", 0) == 0 && a.size() == 5) simcore::SetCv((a[4] - '0') & 3, std::atoi(next()));
     else if (a.rfind("--gate", 0) == 0 && a.size() == 7) simcore::SetGate((a[6] - '0') & 3, std::atoi(next()) != 0);
+    else if (a == "--to") side = next()[0] == 'R' ? simcore::kRight : simcore::kLeft;
     else if (a == "--encoder") simcore::EncoderMove(side, std::atoi(next()));
     else if (a == "--press") simcore::EncoderPress(side);
     else if (a == "--keys") Keys(next());

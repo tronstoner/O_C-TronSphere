@@ -98,17 +98,28 @@ constexpr uint8_t kDefaultRoot = 4;           // E
 constexpr uint16_t kDefaultSeed = 1;
 
 // ---- Clock page (glue settings, custom/core/likembe_clock.h; docs/CLOCK.md) ----
-// Src: Int = the hemisphere's Clock(0) as upstream routes it (internal clock
-// multiplier when running, else trigger map); TRn = the physical jack, rising
-// edge of HS::frame.gate_high[n-1] (ClockSetup never affects it).
+// Src: Int = the internal clock's 24-pulses-per-beat tock
+// (HS::clock_m.Tock(ClockManager::MIDI_CLOCK) while IsRunning()), identical on
+// both hemispheres, independent of the ClockSetup slot multipliers and the
+// trigger map; TRn = the physical jack, rising edge of HS::frame.gate_high[n-1].
 enum ClockSrc : uint8_t { kSrcInt = 0, kSrcTr1, kSrcTr2, kSrcTr3, kSrcTr4, kSrcCount };
-// Div: with Src TRn, one engine step every Div input pulses (decrement counter).
-constexpr uint8_t kClockDivMin = 1, kClockDivMax = 24;
-constexpr uint8_t kDefaultClockDiv = 1;
-// Roll: trigger input (physical jack) for an immediate re-roll. Default = the hemisphere's own
-// 2nd input (TR2 left, TR4 right).
+constexpr uint8_t kIntPpqn = 24;              // Src Int pulses per beat (MIDI_OUT_PPQN)
+// Div: pulses per engine step, one value per source kind (decrement counter).
+// Int 1..24 (24 = 1/4 note), TRn 1..16 (4 bits: the uint64 has no room for 5).
+constexpr uint8_t kClockDivMin = 1, kClockDivIntMax = 24, kClockDivTrMax = 16;
+constexpr uint8_t kDefaultDivInt = 6;         // 1/16 at 24 PPQN
+constexpr uint8_t kDefaultDivTr = 1;
+// Note names for Src Int Div values (pulses at 24 PPQN); other values show the number only.
+struct DivNote { uint8_t div; const char* name; };
+constexpr DivNote kDivNotes[] = {{24, "1/4"}, {16, "1/4T"}, {12, "1/8"}, {8, "1/8T"},
+                                 {6, "1/16"}, {4, "1/16T"}, {3, "1/32"}, {2, "1/32T"}};
+inline const char* DivNoteName(uint8_t div) {
+  for (const DivNote& n : kDivNotes) if (n.div == div) return n.name;
+  return nullptr;
+}
+// Roll: trigger input (physical jack) for an immediate re-roll. Same default on both sides.
 enum RollIn : uint8_t { kRollOff = 0, kRollTr1, kRollTr2, kRollTr3, kRollTr4, kRollCount };
-constexpr uint8_t kDefaultRollLeft = kRollTr2, kDefaultRollRight = kRollTr4;
+constexpr uint8_t kDefaultRoll = kRollTr2;
 // Rst: extra trigger input (physical jack) that restarts at bar start (figures
 // kept). Clock start always restarts anyway (upstream calls Reset() on start).
 enum RstIn : uint8_t { kRstOff = 0, kRstTr1, kRstTr2, kRstTr3, kRstTr4, kRstCount };

@@ -27,8 +27,10 @@ const C = {
   kDensityCvRange: 35,
   kPassageBars: [0, 1, 2, 3, 4, 5, 6, 7, 8],
   // Clock page (glue): ClockSrc, kClockDiv*, RollIn, RstIn
-  kSrcInt: 0, kSrcTr1: 1, kSrcCount: 5, kClockDivMin: 1, kClockDivMax: 24, kDefaultClockDiv: 1,
-  kRollOff: 0, kRollTr1: 1, kRollCount: 5, kDefaultRollLeft: 2, kDefaultRollRight: 4,
+  kSrcInt: 0, kSrcTr1: 1, kSrcCount: 5, kIntPpqn: 24,
+  kClockDivMin: 1, kClockDivIntMax: 24, kClockDivTrMax: 16, kDefaultDivInt: 6, kDefaultDivTr: 1,
+  kDivNotes: {24: '1/4', 16: '1/4T', 12: '1/8', 8: '1/8T', 6: '1/16', 4: '1/16T', 3: '1/32', 2: '1/32T'},
+  kRollOff: 0, kRollTr1: 1, kRollCount: 5, kDefaultRoll: 2,
   kRstOff: 0, kRstTr1: 1, kRstCount: 5, kDefaultRst: 0,
   kDefaultPulseTicks: 2083, kTickHz: 16666,   // gate length % = lab.gatePct (kGateLengthPct)
   kDefaultPassageIdx: 0, kDefaultRoot: 4, kDefaultSeed: 1,
@@ -385,10 +387,13 @@ function dump(params, bars, lab) {
 }
 
 // ---- custom/core/likembe_clock.h (glue-level Clock page) ----
-// LikembeClock::Defaults(right): Src Int, Div 1, Roll = own 2nd input, Rst Off.
-function clockDefaults(right) {
-  return {src: C.kSrcInt, div: C.kDefaultClockDiv, roll_in: right ? C.kDefaultRollRight : C.kDefaultRollLeft, rst_in: C.kDefaultRst};
+// LikembeClock::Defaults(): Src Int, Div Int 6 / Div TR 1, Roll TR2, Rst Off (both sides).
+function clockDefaults() {
+  return {src: C.kSrcInt, div_int: C.kDefaultDivInt, div_tr: C.kDefaultDivTr, roll_in: C.kDefaultRoll, rst_in: C.kDefaultRst};
 }
+// LikembeClock::Div() / DivMax(): the Div of the current Src.
+function clockDivKey(c) { return c.src === C.kSrcInt ? 'div_int' : 'div_tr'; }
+function clockDivMax(c) { return c.src === C.kSrcInt ? C.kClockDivIntMax : C.kClockDivTrMax; }
 // PulseDivider::Tick, 1:1: fires on the first pulse after reset (left = 0), then
 // every div pulses; a div lowered below the remaining count fires on the next pulse.
 function pulseDividerTick(d, div) {   // d = {left}
@@ -398,6 +403,6 @@ function pulseDividerTick(d, div) {   // d = {left}
   return fire;
 }
 
-const E = {C, Core, labDefaults, cloneLab, defaults, clampParams, dump, clockDefaults, pulseDividerTick};
+const E = {C, Core, labDefaults, cloneLab, defaults, clampParams, dump, clockDefaults, clockDivKey, clockDivMax, pulseDividerTick};
 if (typeof module !== 'undefined' && module.exports) module.exports = E; else root.LikembeEngine = E;
 })(typeof window !== 'undefined' ? window : this);

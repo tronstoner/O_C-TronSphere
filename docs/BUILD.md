@@ -79,7 +79,8 @@ custom/
 
 | Env | Flash (of 262144) | RAM (of 65536) |
 |---|---|---|
-| `custom_min` (Hello + Likembe, `Len` 1..32, 2026-10-20; `task size`, delta 0 B) | 99 492 B (38.0 %) | 20 824 B (31.8 %) |
+| `custom_min` (Hello + Likembe, Src Int = 24 PPQN, Div per source, 2026-10-20; `task size`, +240 B) | 99 732 B (38.0 %) | 20 824 B (31.8 %) |
+| `custom_min` (previous: `Len` 1..32, 2026-10-20) | 99 492 B (38.0 %) | 20 824 B (31.8 %) |
 | `custom_min` (previous: Clock page TRn = physical jack, 2026-10-20) | 99 492 B (38.0 %) | 20 824 B (31.8 %) |
 | `custom_min` (previous: Clock page replaces `Div`/`Clk`, 2026-10-20) | 99 476 B (37.9 %) | 20 824 B (31.8 %) |
 | `custom_min` (previous: Hello + Likembe, `Len`/`Div` replace `Grid`, 2026-10-19; `task size`) | 98 724 B (37.7 %) | 20 792 B (31.7 %) |

@@ -133,18 +133,25 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
   `AuxButton` while editing a page row also returns. Rules: `docs/CLOCK.md`.
 - Glue-side settings `custom::LikembeClock` + `custom::PulseDivider` in
   `custom/core/likembe_clock.h` (host-testable; core never sees them). Core pack re-laid out
-  to bits 0–47 (`kPackBits`), clock page at 48–61; no presets existed.
+  to bits 0–47 (`kPackBits`), clock page at 48–61 (2026-10-20: 48–63); no presets existed.
 - Glue order per tick: jack edges (4 bits from `frame.gate_high`) → Roll input → Rst TRn
-  → step (Src Int = `Clock(0)`; TRn = jack edge && divider). `Reset()` also drops
+  → step ((Src Int = 24 PPQN tock, TRn = jack edge) && divider). `Reset()` also drops
   the step-interval measurement (`have_pulse = false`): found by the former `likembe_rst_int` sim
   scenario, the first gate after a restart was 50 % of the stop gap and swallowed notes.
 - Finding: upstream auto_reset already calls `Reset()` on every applet on clock start; kept,
   so clock start always restarts and `Rst` only adds a trigger input (`Int` value dropped;
   stored code 1 of old presets unpacks as Off).
-- Tests: `clock_pack_unpack`, `pulse_divider` (host); sim scenarios `likembe_src_int_x4`,
+- 2026-10-20 (user decision): `Src Int` = 24 PPQN internal clock
+  (`clock_m.IsRunning() && clock_m.Tock(MIDI_CLOCK)`), not `Clock(0)`: identical on both
+  hemispheres, ClockSetup slot multipliers / trigger map have no effect. `Div` applies to
+  every source, two stored values (`div_int` 1..24 default 6 = 1/16, `div_tr` 1..16 default 1),
+  note names with Src Int. Defaults equal on both sides (`Roll TR2`). Clock block re-laid out
+  to bits 48–63 (base-5 Src/Roll/Rst field; `div_tr` limited to 16 for lack of bits).
+- Tests: `clock_pack_unpack`, `pulse_divider` (host); sim scenarios `likembe_int_both_sides`,
+  `likembe_int_stopped_tr1_ignored`, `likembe_int_div_note`,
   `likembe_src_tr1_div3`, `likembe_src_tr1_jack_override`, `likembe_rst_clockstart`,
   `likembe_rst_tr2`, `likembe_ext_sync_tr1` (real ClockSetup in
-  the sim); lab: ClockSetup model, verified in headless Chrome (step counts for x4, steady
+  the sim); lab (2026-10-20: BPM + Start/Stop, Src Int = 24 PPQN, no per-voice multipliers; node syntax check only): earlier ClockSetup model verified in headless Chrome (step counts for x4, steady
   TR1 / Div 3, manual pulses, Rst restart; at the time with Rst Int, not re-run after the 2026-10-20 TRn change) with a stubbed AudioContext.
 
 ### Firmware translation (lab → glue)

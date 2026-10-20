@@ -363,37 +363,41 @@ TEST(pack_unpack) {
   return ok;
 }
 
-// Clock page settings: pack into bits 48..61 only, round trip, clamp garbage,
-// per-hemisphere Roll default.
+// Clock page settings: pack into bits 48..63 only, round trip of every field
+// value, clamp garbage, same defaults on both sides, Div per source.
 TEST(clock_pack_unpack) {
   bool ok = true;
   using custom::LikembeClock;
-  LikembeClock dl = LikembeClock::Defaults(false), dr = LikembeClock::Defaults(true);
-  CHECK(dl.src == lk::kSrcInt && dl.div == 1 && dl.roll_in == lk::kRollTr2 && dl.rst_in == lk::kRstOff);
-  CHECK(dr.roll_in == lk::kRollTr4);
-  LikembeClock c{lk::kSrcTr3, 24, lk::kRollOff, lk::kRstTr4};
-  uint64_t d = c.Pack();
-  CHECK((d & ((1ull << 48) - 1)) == 0 && (d >> 62) == 0);
-  LikembeClock u = LikembeClock::Unpack(d | 0xFFFFFFFFFFFFull, false);
-  CHECK(u.src == c.src && u.div == 24 && u.roll_in == c.roll_in && u.rst_in == c.rst_in);
-  for (int v = lk::kClockDivMin; v <= lk::kClockDivMax; ++v) { c.div = (uint8_t)v; CHECK(LikembeClock::Unpack(c.Pack(), true).div == v); }
-  LikembeClock g = LikembeClock::Unpack(~0ull, true);
-  CHECK(g.src == lk::kSrcInt && g.div == lk::kClockDivMax && g.roll_in == lk::kRollTr4 && g.rst_in == lk::kRstOff);
-  g = LikembeClock::Unpack(~0ull, false);
-  CHECK(g.roll_in == lk::kRollTr2);
-  for (int t = lk::kRstTr1; t <= lk::kRstTr4; ++t) { c.rst_in = (uint8_t)t; CHECK(LikembeClock::Unpack(c.Pack(), false).rst_in == t); }
-  CHECK(LikembeClock::Unpack(1ull << 59, false).rst_in == lk::kRstOff);   // former Int -> Off
-  CHECK(((LikembeClock{lk::kSrcInt, 1, lk::kRollOff, lk::kRstTr1}.Pack() >> 59) & 7) == 2);   // TR1 keeps old code
-  g = LikembeClock::Unpack(0, false);
-  CHECK(g.src == lk::kSrcInt && g.div == 1 && g.roll_in == lk::kRollOff && g.rst_in == lk::kRstOff);
+  LikembeClock d = LikembeClock::Defaults();
+  CHECK(d.src == lk::kSrcInt && d.div_int == 6 && d.div_tr == 1 && d.roll_in == lk::kRollTr2 && d.rst_in == lk::kRstOff);
+  CHECK(d.Div() == 6 && std::strcmp(lk::DivNoteName(d.Div()), "1/16") == 0 && lk::DivNoteName(5) == nullptr);
+  // Div row edits the current source's value only
+  d.SetDiv(30); CHECK(d.div_int == 24 && d.div_tr == 1);
+  d.src = lk::kSrcTr1; d.SetDiv(30); CHECK(d.div_tr == 16 && d.div_int == 24);
+  d.SetDiv(0); CHECK(d.div_tr == 1);
+  for (int s = 0; s < lk::kSrcCount; ++s)
+    for (int r = 0; r < lk::kRollCount; ++r)
+      for (int t = 0; t < lk::kRstCount; ++t) {
+        LikembeClock c{(uint8_t)s, (uint8_t)(1 + (s * 7 + t) % 24), (uint8_t)(1 + (r * 5 + t) % 16), (uint8_t)r, (uint8_t)t};
+        const uint64_t p = c.Pack();
+        CHECK((p & ((1ull << 48) - 1)) == 0);
+        LikembeClock u = LikembeClock::Unpack(p | 0xFFFFFFFFFFFFull);
+        CHECK(u.src == c.src && u.div_int == c.div_int && u.div_tr == c.div_tr && u.roll_in == c.roll_in && u.rst_in == c.rst_in);
+      }
+  LikembeClock m{lk::kSrcInt, 24, 16, lk::kRollOff, lk::kRstOff};
+  CHECK(LikembeClock::Unpack(m.Pack()).div_int == 24 && LikembeClock::Unpack(m.Pack()).div_tr == 16);
+  LikembeClock g = LikembeClock::Unpack(~0ull);   // inputs 127 -> defaults, div_int 32 -> 24
+  CHECK(g.src == lk::kSrcInt && g.roll_in == lk::kRollTr2 && g.rst_in == lk::kRstOff && g.div_int == 24 && g.div_tr == 16);
+  g = LikembeClock::Unpack(0);
+  CHECK(g.src == lk::kSrcInt && g.div_int == 1 && g.div_tr == 1 && g.roll_in == lk::kRollOff && g.rst_in == lk::kRstOff);
   // core + clock share one uint64 without overlap
   LikembeCore a = Make(lk::kPartLead, 77);
-  LikembeClock k{lk::kSrcTr2, 7, lk::kRollTr1, lk::kRstTr3};
+  LikembeClock k{lk::kSrcTr2, 7, 9, lk::kRollTr1, lk::kRstTr3};
   uint64_t all = a.Pack() | k.Pack();
   LikembeParams q = LikembeCore::UnpackParams(all);
   CHECK(std::memcmp(&q, &a.params, sizeof q) == 0);
-  LikembeClock k2 = LikembeClock::Unpack(all, false);
-  CHECK(k2.src == k.src && k2.div == 7 && k2.roll_in == k.roll_in && k2.rst_in == k.rst_in);
+  LikembeClock k2 = LikembeClock::Unpack(all);
+  CHECK(k2.src == k.src && k2.div_int == 7 && k2.div_tr == 9 && k2.roll_in == k.roll_in && k2.rst_in == k.rst_in);
   return ok;
 }
 

@@ -54,9 +54,17 @@ scenarios() {
     printf '%s\n' "$out" | grep -E '^(PASS|FAIL)' || true
     [ "$rc" = 0 ] || echo "   -> FAILED: $name"
   }
-  # Src Int: internal clock 120 BPM, x4 on the hemisphere's first input -> 8 steps/s.
-  run "likembe_src_int_x4" $LK --int-bpm 120 --mult 1:x4 --segment --seconds 0.5 --expect-rises 0 0 \
-      --segment --int-start --seconds 1.99 --expect-rises 0 16
+  # Src Int = 24 PPQN internal clock, Div 6 (default, 1/16). 120 BPM = 48 pulses/s -> 8 steps/s,
+  # identical on both hemispheres, all ClockSetup slot multipliers off. Right Out A = output 2.
+  LKR="--to R --press --encoder 3 --press --encoder 1 --press --encoder -2 --press --to L"
+  OFF="--mult 1:off --mult 2:off --mult 3:off --mult 4:off"
+  run "likembe_int_both_sides" --right Likembe $LK $LKR $OFF --int-bpm 120 --segment --seconds 0.5 \
+      --expect-rises 0 0 --expect-rises 2 0 --segment --int-start --seconds 1.99 --expect-rises 0 16 --expect-rises 2 16
+  # Src Int while the internal clock is stopped: TR1 pulses (trigger map input) never step.
+  run "likembe_int_stopped_tr1_ignored" $LK --clock 480:1 --seconds 2 --expect-rises 0 0
+  # Src Int Div 8 (1/8T): 48 pulses/s / 8 -> 6 steps/s.
+  run "likembe_int_div_note" $LK --encoder 7 --press --encoder 1 --press --encoder 2 --press \
+      --int-bpm 120 $OFF --segment --int-start --seconds 1.99 --expect-rises 0 12
   # Src TR1, Div 3 (Clock page: Src TR1, Div 3): 7 TR1 pulses -> steps on pulses 1, 4, 7.
   run "likembe_src_tr1_div3" $LK --encoder 7 --press --press --encoder 1 --press --encoder 1 --press \
       --encoder 2 --press --segment --trig 1@0.1 --trig 1@0.2 --trig 1@0.3 --trig 1@0.4 \
@@ -67,15 +75,16 @@ scenarios() {
       --int-bpm 120 --mult 1:x4 --int-start --segment --trig 1@0.25 --trig 1@0.75 --trig 1@1.25 \
       --trig 1@1.75 --seconds 2 --expect-rises 0 4
   # Clock start always restarts (Rst Off): start, stop, start -> second run replays the first.
-  run "likembe_rst_clockstart" $LK --int-bpm 120 --mult 1:x4 --segment --int-start --seconds 1.3 --int-stop \
+  run "likembe_rst_clockstart" $LK --int-bpm 120 --segment --int-start --seconds 1.3 --int-stop \
       --seconds 0.5 --expect-rises 0 11 --segment --int-start --seconds 1.3 --expect-same 0 1 2 10
   # Rst TR2 (Roll Off): a TR2 pulse mid-run restarts at bar start -> replays the first run.
   run "likembe_rst_tr2" $LK --encoder 7 --press --encoder 2 --press --encoder -2 --press --encoder 1 \
-      --press --encoder 2 --press --int-bpm 120 --mult 1:x4 --segment --int-start --seconds 1.3 \
+      --press --encoder 2 --press --int-bpm 120 --segment --int-start --seconds 1.3 \
       --expect-rises 0 11 --segment --trig 2@1.3 --seconds 1.3 --expect-same 0 1 2 10
-  # External sync: armed internal clock follows TR1 at 150 BPM, PPQN 4; x2 -> 5 steps/s.
-  run "likembe_ext_sync_tr1" $LK --clock 150:4 --int-bpm 120 --ppqn 4 --mult 1:x2 --int-arm \
-      --seconds 1.1 --expect-bpm 149..151 --segment --seconds 1.9 --expect-rises 0 9
+  # External sync: armed internal clock follows TR1 at 150 BPM, PPQN 4; Src Int Div 6 ->
+  # 150 / 60 x 24 / 6 = 10 steps/s (tempo locks after two pulses, hence a range).
+  run "likembe_ext_sync_tr1" $LK --clock 150:4 --int-bpm 120 --ppqn 4 --int-arm \
+      --seconds 1.1 --expect-bpm 149..151 --segment --seconds 1.9 --expect-rises 0 18..20
   # ClockSetup screen via the panel keys (Up+Down gesture, real ClockSetup UI):
   # cursor Play -> Tempo, edit, 120 -> 100; cursor -> slot 1 multiplier, off -> x3;
   # cursor -> trigger map row; Up click closes. PNGs in host/build/out/clocksetup_*.png.

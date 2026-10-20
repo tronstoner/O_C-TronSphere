@@ -77,28 +77,43 @@ ClockSetup's TRIG rows (`applets/ClockSetup.h:185-189`).
 
 Other values have no common note name. The browser lab uses the same labels.
 
-## 2. Our rule for applets
+## 2. Our rule for applets (decided 2026-10-20)
 
-- **Applets step once per pulse.** No tempo derivation, no internal multiplication, no
-  BPM in an applet. Tempo and note value come from ClockSetup (layer 1.2) or the patch.
-- **`Src Int`** = `Clock(0)` exactly as upstream routes it (internal tock when running with a
-  multiplier, else the trigger map with its div/mult and Euclidean filter). One step per pulse.
-- **`TRn` in applet clock settings = the physical jack** (decided 2026-10-20). `Src TRn`,
-  `Roll TRn`, `Rst TRn` read the rising edge of `HS::frame.gate_high[n-1]`, the raw level of
-  jack TRn read every tick with `OC::DigitalInputs::read_immediate`
-  (`firmware/software/src/HemisphereApplet.cpp:87-90`), edge state kept in the applet. ClockSetup
-  (trigger map, internal clock multipliers) never overrides or influences it; `frame.clocked[]`
-  is not used for TRn.
-- **`Src TRn`** adds a **pulse counter only** (`Div`: one step every Div pulses, decrement
-  counter, fires on the first pulse after a reset; `custom::PulseDivider`,
-  `custom/core/likembe_clock.h`).
+Intent: consistent, predictable clock behaviour, identical on both hemispheres,
+independent of the ClockSetup slot multipliers and the trigger map.
+
+- **`Src Int`** = the internal clock's **24-pulses-per-beat** tock:
+  `HS::clock_m.IsRunning() && HS::clock_m.Tock(ClockManager::MIDI_CLOCK)`
+  (`HSClockManager.h:57`, `tocks_per_beat[MIDI_CLOCK] = MIDI_OUT_PPQN = 24` :42, :75). `SyncTrig()`
+  computes it every tick while the clock runs, independent of the slot multipliers and of
+  `midi_out_enabled` (only `MIDITock()` checks that). Runs whenever the internal clock runs
+  (also when it follows external sync on TR1), on both sides; stops when it stops.
+  `Clock(0)` / `frame.clocked[]` are **not** used. **ClockSetup slot multipliers (MULT rows)
+  and the trigger map do not affect our applets.**
+- **`Src TRn`** = the physical jack (decided 2026-10-20). `Src TRn`, `Roll TRn`, `Rst TRn`
+  read the rising edge of `HS::frame.gate_high[n-1]`, the raw level of jack TRn read every
+  tick with `OC::DigitalInputs::read_immediate` (`HemisphereApplet.cpp:87-90`), edge state
+  kept in the applet.
+- **`Div`** = pulses per engine step, for every source (decrement counter, fires on the first
+  pulse after a reset; `custom::PulseDivider`, `custom/core/likembe_clock.h`). Stored per
+  source kind: `div_int` (1..24, default 6 = 1/16) and `div_tr` (1..16, default 1); the `Div`
+  row edits the one for the current `Src`, so switching `Src` keeps each tempo.
+- **Note names** with `Src Int` (one beat = a quarter note, 24 pulses):
+
+  | Div | 24 | 16 | 12 | 8 | 6 | 4 | 3 | 2 |
+  |---|---|---|---|---|---|---|---|---|
+  | Note | 1/4 | 1/4T | 1/8 | 1/8T | 1/16 | 1/16T | 1/32 | 1/32T |
+
+  Other values show only the number. Constants: `kDivNotes`, `kIntPpqn` (`likembe_constants.h`).
 - **Roll / Rst inputs per applet**: an applet may offer its own trigger inputs for actions
   (Likembe: `Roll` re-roll, `Rst` restart at bar start; values `Off`, `TR1`..`TR4`). Several
-  actions on the same input all fire.
-- Applets may read `HS::clock_m` (e.g. `IsRunning()`), never write it.
+  actions on the same input all fire. Defaults identical on both sides.
+- Applets may read `HS::clock_m` (`IsRunning()`, `Tock()`), never write it.
 - **Clock start always restarts the sequence**: upstream calls `Reset()` on every applet when
   the clock starts (auto_reset, 1.2); kept as is. `Rst` adds a trigger input for restarts.
 - Likembe is the reference implementation: Clock page (`docs/modules/likembe.md`).
+
+Sections 1.1-1.3 describe upstream routing for upstream applets; our applets bypass it.
 
 ## 3. Host simulator coverage
 
@@ -110,6 +125,7 @@ Covered: tempo, start / arm / stop, per-slot multiplier, Input PPQN and external
 default sources. Not covered: the ClockSetup **UI** (its `View()`/encoder handling is compiled
 but not reachable: no Up+Down overlay), tap tempo, shuffle and boops (no sim commands), MIDI
 clock, skip filters (default off), trigger-map source/div/Euclid editing (defaults only).
-Scenarios: `task host:sim` (no arguments) runs `likembe_src_int_x4`, `likembe_src_tr1_div3`,
+Scenarios: `task host:sim` (no arguments) runs `likembe_int_both_sides`,
+`likembe_int_stopped_tr1_ignored`, `likembe_int_div_note`, `likembe_src_tr1_div3`,
 `likembe_src_tr1_jack_override`, `likembe_rst_clockstart`, `likembe_rst_tr2`,
 `likembe_ext_sync_tr1`.

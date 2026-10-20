@@ -5,9 +5,10 @@
 // only: I/O, cursor/encoder, display, persistence. See docs/modules/likembe.md.
 //
 // Clock page (main row "Clock >"; settings in custom/core/likembe_clock.h, rules
-// in docs/CLOCK.md): Src Int = Clock(0) as upstream routes it, one step per
-// pulse; Src TRn = physical jack n (rising edge of HS::frame.gate_high[n-1],
-// ClockSetup never affects it) divided by Div. Roll TRn = immediate re-roll,
+// in docs/CLOCK.md): Src Int = the internal clock's 24 PPQN tock
+// (HS::clock_m.Tock(MIDI_CLOCK) while running; slot multipliers never matter);
+// Src TRn = physical jack n (rising edge of HS::frame.gate_high[n-1]). Div =
+// pulses per step, stored per source kind (div_int / div_tr). Roll TRn = immediate re-roll,
 // Rst TRn = restart at bar start. Clock start restarts via upstream Reset().
 // CV1 density mod (+-3 V = +-kDensityCvRange %), Out A velocity gate per note, Out B pitch.
 #pragma once
@@ -20,7 +21,7 @@ public:
 
   void Start() {
     core.Init(custom::LikembeParams::Defaults(custom::likembe::kPartBass));
-    clk = custom::LikembeClock::Defaults(Right());
+    clk = custom::LikembeClock::Defaults();
     cursor = 0;
     page = false;
     pitch = core.EventAt(0).pitch_units;
@@ -74,7 +75,6 @@ public:
     if (page) {
       if (!EditMode()) {
         if (page_cursor == kPgBack) { LeavePage(); return; }
-        if (page_cursor == kPgDiv && clk.src == custom::likembe::kSrcInt) return;   // "-": not editable
       }
       CursorToggle();
       return;
@@ -95,7 +95,7 @@ public:
       if (!EditMode()) { MoveCursor(page_cursor, direction, kPgLast); return; }
       switch (page_cursor) {
         case kPgSrc:  clk.src = (uint8_t)constrain(clk.src + direction, 0, kSrcCount - 1); divider.Reset(); break;
-        case kPgDiv:  if (clk.src != kSrcInt) clk.div = (uint8_t)constrain(clk.div + direction, kClockDivMin, kClockDivMax); break;
+        case kPgDiv:  clk.SetDiv(clk.Div() + direction); break;
         case kPgRoll: clk.roll_in = (uint8_t)constrain(clk.roll_in + direction, 0, kRollCount - 1); break;
         case kPgRst:  clk.rst_in = (uint8_t)constrain(clk.rst_in + direction, 0, kRstCount - 1); break;
       }
@@ -120,7 +120,7 @@ public:
   uint64_t OnDataRequest() { return core.Pack() | clk.Pack(); }
   void OnDataReceive(uint64_t data) {
     core.Init(custom::LikembeCore::UnpackParams(data));
-    clk = custom::LikembeClock::Unpack(data, Right());
+    clk = custom::LikembeClock::Unpack(data);
     divider.Reset();
     pitch = core.EventAt(0).pitch_units;
   }
@@ -147,6 +147,8 @@ private:
   static constexpr int kPageRowY0 = 14;  // Clock page: 5 rows, 10 px pitch (14..61)
   static constexpr int kPageRowH = 10;
   static constexpr int kPageValX = 34;   // value column; cursor 29 px to x 62
+  static constexpr int kPageDivX = 22;   // Div row: "16 1/4T" = 7 chars x 6 px, x 22..63
+  static int ValX(int row) { return row == kPgDiv ? kPageDivX : kPageValX; }
   static constexpr int kDensityStep = 5;
   static constexpr int kVarStep = 5;
   // Layout (y = top of element)
@@ -170,7 +172,7 @@ private:
   static constexpr int kCellS = 5;       // odd size: checkerboard dotted frame closes at the corners
 
   custom::LikembeCore core;
-  custom::LikembeClock clk = custom::LikembeClock::Defaults(false);
+  custom::LikembeClock clk = custom::LikembeClock::Defaults();
   custom::PulseDivider divider;
   int cursor = 0;
   bool page = false;          // Clock page shown
@@ -189,13 +191,15 @@ private:
   bool Right() const { return io_offset != 0; }
   void LeavePage() { page = false; cursor = kCurClock; ResetCursor(); }
 
-  // Engine step: Src Int = Clock(0) (upstream routing), one step per pulse;
-  // Src TRn = rising edge of physical jack n, one step every Div pulses.
+  // Engine step, one every Div pulses: Src Int = 24 PPQN internal-clock tock
+  // (array read; false while stopped); Src TRn = rising edge of physical jack n.
   bool JackRose(uint8_t tr) const { return (jack_rise >> ((tr - 1) & 3)) & 1; }   // tr 1..4
   bool StepPulse() {
     using namespace custom::likembe;
-    if (clk.src == kSrcInt) return Clock(0);
-    return JackRose(clk.src) && divider.Tick(clk.div);
+    const bool pulse = clk.src == kSrcInt
+        ? HS::clock_m.IsRunning() && HS::clock_m.Tock(ClockManager::MIDI_CLOCK)
+        : JackRose(clk.src);
+    return pulse && divider.Tick(clk.Div());
   }
 
   // Formatting for the Clock page values (one place).
@@ -207,7 +211,12 @@ private:
     using namespace custom::likembe;
     switch (row) {
       case kPgSrc:  gfxPrint(clk.src == kSrcInt ? "Int" : InName(clk.src)); break;
-      case kPgDiv:  if (clk.src == kSrcInt) gfxPrint("-"); else { gfxPrint("/"); gfxPrint(clk.div); } break;
+      case kPgDiv: {   // "6 1/16": count, then the note name with Src Int
+        gfxPrint(clk.Div());
+        const char* n = clk.src == kSrcInt ? DivNoteName(clk.Div()) : nullptr;
+        if (n) { gfxPrint(" "); gfxPrint(n); }
+        break;
+      }
       case kPgRoll: gfxPrint(clk.roll_in == kRollOff ? "Off" : InName(clk.roll_in)); break;
       case kPgRst:
         gfxPrint(clk.rst_in == kRstOff ? "Off" : InName(clk.rst_in)); break;
@@ -219,11 +228,11 @@ private:
     for (int r = 0; r <= kPgLast; ++r) {
       const int y = kPageRowY0 + r * kPageRowH;
       gfxPrint(1, y, kRows[r]);
-      if (r != kPgBack) { gfxPrint(kPageValX, y, ""); PrintPageValue(r); }
+      if (r != kPgBack) { gfxPrint(ValX(r), y, ""); PrintPageValue(r); }
     }
     const int y = kPageRowY0 + page_cursor * kPageRowH;
     if (page_cursor == kPgBack) gfxCursor(1, y + 8, 25);
-    else gfxCursor(kPageValX - 1, y + 8, 63 - kPageValX);
+    else gfxCursor(ValX(page_cursor) - 1, y + 8, 64 - ValX(page_cursor));
   }
 
   void DrawParam() {
