@@ -4,6 +4,8 @@
 // host, plus the minimal hardware stand-ins its Controller() touches:
 //   OC::DigitalInputs  (OC_digital_inputs.cpp: pin ISRs + Scan, TR1 sync input)
 //   OC::ui._Poke()     (OC_ui.cpp: screensaver wake-up, no-op here)
+// and the hooks sim_core uses to show and operate the ClockSetup screen the way
+// APP_HEMISPHERE.h does (View() overlay, encoder / encoder-push routing).
 // HS::clock_m itself is defined in HemisphereApplet.cpp (already compiled).
 // See docs/HOST_SIM.md "Internal clock (ClockSetup)".
 #include "HemisphereApplet.h"
@@ -47,3 +49,14 @@ void HostClockSetupController() {
   OC::DigitalInputs::Scan();
   ClockSetup_instance.Controller();
 }
+
+// APP_HEMISPHERE.h View(): "clock screen is an overlay" -> ClockSetup_instance.View()
+void HostClockSetupView() { ClockSetup_instance.View(); }
+// APP_HEMISPHERE.h DelegateEncoderMovement(): left encoder -> OnLeftEncoderMove,
+// right encoder -> OnEncoderMove.
+void HostClockSetupEncoder(bool left, int direction) {
+  if (left) ClockSetup_instance.OnLeftEncoderMove(direction);
+  else ClockSetup_instance.OnEncoderMove(direction);
+}
+// APP_HEMISPHERE.h DelegateEncoderPush(): either encoder push -> OnButtonPress().
+void HostClockSetupPress() { ClockSetup_instance.OnButtonPress(); }

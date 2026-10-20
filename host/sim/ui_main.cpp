@@ -102,7 +102,6 @@ struct Ui {
   int sel = 0;                           // selected CV channel
   bool gate_held[4] = {}, gate_latch[4] = {};
   bool paused = false;
-  bool up_held = false, down_held = false, dual = false;
   double ratio = 1.0;
   bool quit = false;
   std::string msg = "Ready. Keys are listed below.";
@@ -118,22 +117,13 @@ void ApplyGate(Ui &u, int ch) { simcore::SetGate(ch, u.gate_held[ch] || u.gate_l
 const char *SideName(Side s) { return s == kLeft ? "left" : "right"; }
 
 void Encoder(Ui &u, Side s, int dir) {
-  if (!simcore::Active(s)) return Msg(u, std::string(SideName(s)) + " hemisphere is empty");
+  if (!simcore::ClockSetupOpen() && !simcore::Active(s)) return Msg(u, std::string(SideName(s)) + " hemisphere is empty");
   simcore::EncoderMove(s, dir);
 }
 
 void Push(Ui &u, Side s) {
-  if (!simcore::Active(s)) return Msg(u, std::string(SideName(s)) + " hemisphere is empty");
+  if (!simcore::ClockSetupOpen() && !simcore::Active(s)) return Msg(u, std::string(SideName(s)) + " hemisphere is empty");
   simcore::EncoderPress(s);
-}
-
-// Up = button A (left), Down = button B (right). Firmware acts on release.
-void SelectRelease(Ui &u, Side s) {
-  if (simcore::SelectButton(s))
-    Msg(u, std::string(s == kLeft ? "Up" : "Down") + ": AuxButton (edit cancelled)");
-  else
-    Msg(u, std::string(s == kLeft ? "Up" : "Down") +
-               ": select mode needs HemisphereManager (not simulated)");
 }
 
 void Screenshot(Ui &u);
@@ -155,19 +145,13 @@ void OnKey(Ui &u, SDL_Keycode k, bool shift, bool down, bool repeat) {
 
   if (k == SDLK_q || k == SDLK_e) {
     if (repeat) return;
-    bool &me = (k == SDLK_q) ? u.up_held : u.down_held;
-    bool &other = (k == SDLK_q) ? u.down_held : u.up_held;
-    if (down) {
-      me = true;
-      if (other) {
-        u.dual = true;
-        Msg(u, "Up+Down = Clock Setup UI: not simulated (internal clock: I, -/=, M, N)");
-      }
-    } else {
-      me = false;
-      if (u.dual) { if (!other) u.dual = false; }  // swallow both releases
-      else SelectRelease(u, k == SDLK_q ? kLeft : kRight);
-    }
+    const Side s = k == SDLK_q ? kLeft : kRight;
+    const simcore::ButtonResult r = down ? simcore::ButtonDown(s) : simcore::ButtonUp(s);
+    if (r == simcore::kBtnOpened) Msg(u, "Up+Down: ClockSetup screen open (any single Up/Down click closes)");
+    else if (r == simcore::kBtnClosed) Msg(u, "ClockSetup screen closed");
+    else if (r == simcore::kBtnAux) Msg(u, std::string(s == kLeft ? "Up" : "Down") + ": AuxButton (edit cancelled)");
+    else if (r == simcore::kBtnNoManager)
+      Msg(u, std::string(s == kLeft ? "Up" : "Down") + ": select mode needs HemisphereManager (not simulated)");
     return;
   }
 
@@ -248,6 +232,10 @@ void OnKey(Ui &u, SDL_Keycode k, bool shift, bool down, bool repeat) {
       Msg(u, fmt::Printf("internal clock sync PPQN %d (TR1)", simcore::IntPpqn()));
       break;
     }
+    case SDLK_g:  // shortcut for the Up+Down gesture
+      simcore::ClockSetupShow(!simcore::ClockSetupOpen());
+      Msg(u, simcore::ClockSetupOpen() ? "ClockSetup screen open" : "ClockSetup screen closed");
+      break;
     case SDLK_ESCAPE: u.quit = true; break;
     default: break;
   }
@@ -343,7 +331,8 @@ void DrawPanel(Ui &u) {
   c = Text(u, c, r, kText, fmt::Bpm(simcore::IntBpm()) + fmt::Printf(" ppqn %d  mult", simcore::IntPpqn()));
   for (int ch = 0; ch < 4; ++ch)
     c = Text(u, c + 1, r, ch == u.sel ? kAccent : kText, fmt::Printf("%d:", ch + 1) + fmt::Mult(simcore::IntMultiply(ch)));
-  Text(u, c + 2, r, simcore::IntRunning() ? kHigh : (simcore::IntArmed() ? kAccent : kDim), fmt::IntState());
+  c = Text(u, c + 2, r, simcore::IntRunning() ? kHigh : (simcore::IntArmed() ? kAccent : kDim), fmt::IntState());
+  if (simcore::ClockSetupOpen()) Text(u, c + 2, r, kAccent, "SETUP");
   r += 2;
   const char *legend[] = {
       "A/D  left enc -/+      S  left push      Q  Up button",
@@ -355,6 +344,7 @@ void DrawPanel(Ui &u) {
       "I    int clock start/stop     Shift+I  arm (starts on TR1)",
       "- =  int BPM -/+1 (Shift 10)  N  sync PPQN +1 (Shift -1)",
       "M    int multiplier of the selected input +1 (Shift -1)",
+      "Q+E  ClockSetup screen (hold both; Q or E closes)  G  toggle",
   };
   for (const char *l : legend) Text(u, 1, r++, kDim, l);
   ++r;
@@ -537,7 +527,7 @@ int main(int argc, char **argv) {
       else if (ev.type == SDL_WINDOWEVENT && ev.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
         // Key-ups are lost while unfocused: release momentary controls (latches stay).
         for (int ch = 0; ch < 4; ++ch) { u.gate_held[ch] = false; ApplyGate(u, ch); }
-        u.up_held = u.down_held = u.dual = false;
+        simcore::ReleaseButtons();
       }
     }
 

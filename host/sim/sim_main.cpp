@@ -5,6 +5,7 @@
 // Arguments form a script executed left to right, e.g.
 //   sim --press --encoder +3 --in0 1536 --seconds 2
 // The frame is rendered (PBM/PGM/ASCII) and outputs printed at the end.
+#include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -12,6 +13,7 @@
 #include <vector>
 #include "sim_core.h"
 #include "oled_dump.h"
+#include "png.h"
 
 static void Usage() {
   std::printf(
@@ -46,10 +48,17 @@ static void Usage() {
       "  --mult S:M      multiplier of input slot S (1..4 = left in1, in2, right in1, in2):\n"
       "                  x1..x24, /2../32, off\n"
       "  --ppqn N        external sync: TR1 pulses per beat (0..24)\n"
+      "panel keys (same letters as the SDL window, docs/HOST_SIM.md):\n"
+      "  --keys LIST     comma list, tap or down:/up: prefix: q/e Up/Down button\n"
+      "                  (down:q,down:e,up:q,up:e = Up+Down -> ClockSetup screen,\n"
+      "                  a later q or e tap closes it), g toggle ClockSetup screen,\n"
+      "                  a/d left enc -/+, j/l right enc -/+, s/k left/right push\n"
+      "  --png FILE      write the current 128x64 frame as PNG (relative to --out)\n"
       "checks (exit 1 on failure):\n"
       "  --segment              start a new segment of recorded output rises\n"
       "  --expect-rises K N     output K (0..3) rose from 0 N times (N or LO..HI) in this segment\n"
       "  --expect-bpm N         internal clock tempo (N or LO..HI)\n"
+      "  --expect-state TEXT   the state line (as printed at the end) contains TEXT\n"
       "  --expect-same K A B N  first N rises of output K in segments A and B (0-based)\n"
       "                         show the same values on all four outputs");
 }
@@ -129,6 +138,60 @@ static Range ParseRange(const char *s) {
 }
 static std::string Str(const Range &r) {
   return r.lo == r.hi ? std::to_string(r.lo) : std::to_string(r.lo) + ".." + std::to_string(r.hi);
+}
+
+// --keys: the SDL window's panel keys, applied to simcore the same way ui_main.cpp does.
+static void Keys(const std::string &list) {
+  size_t pos = 0;
+  while (pos < list.size()) {
+    size_t e = list.find(',', pos);
+    if (e == std::string::npos) e = list.size();
+    std::string t = list.substr(pos, e - pos);
+    pos = e + 1;
+    if (t.empty()) continue;
+    int phase = 0;  // 0 tap, 1 down, 2 up
+    if (t.rfind("down:", 0) == 0) { phase = 1; t = t.substr(5); }
+    else if (t.rfind("up:", 0) == 0) { phase = 2; t = t.substr(3); }
+    if (t.size() != 1) { std::fprintf(stderr, "--keys: unknown key '%s'\n", t.c_str()); std::exit(2); }
+    const char k = (char)std::tolower((unsigned char)t[0]);
+    const bool dn = phase != 2, up = phase != 1;
+    switch (k) {
+      case 'q': case 'e': {
+        const simcore::Side s = k == 'q' ? simcore::kLeft : simcore::kRight;
+        if (dn) simcore::ButtonDown(s);
+        if (up) simcore::ButtonUp(s);
+        break;
+      }
+      case 's': if (up) simcore::EncoderPress(simcore::kLeft); break;   // acts on release
+      case 'k': if (up) simcore::EncoderPress(simcore::kRight); break;
+      case 'a': if (dn) simcore::EncoderMove(simcore::kLeft, -1); break;
+      case 'd': if (dn) simcore::EncoderMove(simcore::kLeft, +1); break;
+      case 'j': if (dn) simcore::EncoderMove(simcore::kRight, -1); break;
+      case 'l': if (dn) simcore::EncoderMove(simcore::kRight, +1); break;
+      case 'g': if (dn) simcore::ClockSetupShow(!simcore::ClockSetupOpen()); break;
+      default: std::fprintf(stderr, "--keys: unsupported key '%c'\n", k); std::exit(2);
+    }
+  }
+}
+
+static void Png(const std::string &path) {
+  const uint8_t *fb = simcore::Render();
+  std::vector<uint8_t> g(128 * 64);
+  for (int y = 0; y < 64; ++y)
+    for (int x = 0; x < 128; ++x) g[y * 128 + x] = host::Pixel(fb, x, y) ? 255 : 0;
+  const bool ok = host::WritePng(path.c_str(), 128, 64, 1, g.data());
+  std::printf("%s %s\n", ok ? "wrote" : "FAILED to write", path.c_str());
+}
+
+// The final state line; --expect-state matches against the same text.
+static std::string StateLine(simcore::Side side) {
+  char b[256];
+  std::snprintf(b, sizeof b, "t=%.3fs ticks=%u edit=%d int=%s bpm=%d ppqn=%d mult=%s,%s,%s,%s", simcore::Seconds(),
+                (unsigned)simcore::Ticks(), (int)simcore::EditMode(side),
+                simcore::IntRunning() ? "running" : (simcore::IntArmed() ? "armed" : "stopped"), simcore::IntBpm(),
+                simcore::IntPpqn(), fmt::Mult(simcore::IntMultiply(0)).c_str(), fmt::Mult(simcore::IntMultiply(1)).c_str(),
+                fmt::Mult(simcore::IntMultiply(2)).c_str(), fmt::Mult(simcore::IntMultiply(3)).c_str());
+  return b;
 }
 
 static int g_fail = 0;
@@ -216,6 +279,10 @@ int main(int argc, char **argv) {
       const Range n = ParseRange(next());
       Check(n.Has(simcore::IntBpm()), "internal clock tempo: want " + Str(n) + " got " + std::to_string(simcore::IntBpm()) + " BPM");
     }
+    else if (a == "--expect-state") {
+      const std::string want = next(), got = StateLine(side);
+      Check(got.find(want) != std::string::npos, "state line contains '" + want + "': " + got);
+    }
     else if (a == "--expect-same") {
       const int k = std::atoi(next()) & 3, sa = std::atoi(next()), sb = std::atoi(next()), n = std::atoi(next());
       auto pick = [&](int seg) {
@@ -238,6 +305,8 @@ int main(int argc, char **argv) {
     else if (a.rfind("--gate", 0) == 0 && a.size() == 7) simcore::SetGate((a[6] - '0') & 3, std::atoi(next()) != 0);
     else if (a == "--encoder") simcore::EncoderMove(side, std::atoi(next()));
     else if (a == "--press") simcore::EncoderPress(side);
+    else if (a == "--keys") Keys(next());
+    else if (a == "--png") Png(outdir + "/" + next());
     else if (a == "--out") outdir = next();
     else if (a == "--quiet") quiet = true;
     else if (a == "--side" || a == "--left" || a == "--right" || a == "--clock" ||
@@ -253,11 +322,7 @@ int main(int argc, char **argv) {
   }
 
   const uint8_t *fb = simcore::Render();
-  std::printf("t=%.3fs ticks=%u edit=%d int=%s bpm=%d ppqn=%d mult=%s,%s,%s,%s\n", simcore::Seconds(),
-              (unsigned)simcore::Ticks(), (int)simcore::EditMode(side),
-              simcore::IntRunning() ? "running" : (simcore::IntArmed() ? "armed" : "stopped"), simcore::IntBpm(),
-              simcore::IntPpqn(), fmt::Mult(simcore::IntMultiply(0)).c_str(), fmt::Mult(simcore::IntMultiply(1)).c_str(),
-              fmt::Mult(simcore::IntMultiply(2)).c_str(), fmt::Mult(simcore::IntMultiply(3)).c_str());
+  std::printf("%s\n", StateLine(side).c_str());
   for (int ch = 0; ch < simcore::kChannels; ++ch) std::printf("out%d=%d ", ch, (int)simcore::Out(ch));
   std::printf("\n");
   std::string p = outdir + "/sim.pbm";

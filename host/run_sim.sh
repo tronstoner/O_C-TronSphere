@@ -76,6 +76,15 @@ scenarios() {
   # External sync: armed internal clock follows TR1 at 150 BPM, PPQN 4; x2 -> 5 steps/s.
   run "likembe_ext_sync_tr1" $LK --clock 150:4 --int-bpm 120 --ppqn 4 --mult 1:x2 --int-arm \
       --seconds 1.1 --expect-bpm 149..151 --segment --seconds 1.9 --expect-rises 0 9
+  # ClockSetup screen via the panel keys (Up+Down gesture, real ClockSetup UI):
+  # cursor Play -> Tempo, edit, 120 -> 100; cursor -> slot 1 multiplier, off -> x3;
+  # cursor -> trigger map row; Up click closes. PNGs in host/build/out/clocksetup_*.png.
+  J20="j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j"
+  # Shots are taken right after the keys: ClockSetup leaves edit mode on its own after a while.
+  run "clocksetup_screen" --quiet --keys "down:q,down:e,up:q,up:e" --seconds 0.2 \
+      --keys "l,k,$J20" --png clocksetup_tempo.png --keys "k,l,l,l,k,l,l,l" --png clocksetup_mult.png \
+      --keys "k,l,l,l,l" --png clocksetup_trigmap.png --keys "q" --seconds 0.1 \
+      --expect-bpm 100 --expect-state "mult=x3,"
   [ "$fail" = 0 ] && echo "SIM SCENARIOS OK" || { echo "SIM SCENARIOS FAILED"; exit 1; }
 }
 

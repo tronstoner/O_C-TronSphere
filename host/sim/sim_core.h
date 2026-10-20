@@ -89,6 +89,17 @@ void EncoderPress(Side s);               // OnButtonPress (toggles edit mode)
 // applet edits, otherwise APP_HEMISPHERE would toggle select mode (no manager
 // here). Returns true if it reached the applet.
 bool SelectButton(Side s);
+// While the ClockSetup screen is open, EncoderMove/EncoderPress go to the real
+// ClockSetup (left: OnLeftEncoderMove, right: OnEncoderMove, push: OnButtonPress)
+// and Render() draws ClockSetup::View() over the applets, as APP_HEMISPHERE.h does.
+bool ClockSetupOpen();
+void ClockSetupShow(bool on);            // direct open/close (shortcut key)
+// Up/Down button events with the APP_HEMISPHERE gesture: both held = open
+// ClockSetup; a later single click closes it; otherwise SelectButton() on release.
+enum ButtonResult { kBtnNone, kBtnOpened, kBtnClosed, kBtnAux, kBtnNoManager };
+ButtonResult ButtonDown(Side s);
+ButtonResult ButtonUp(Side s);
+void ReleaseButtons();                   // forget held buttons without acting (focus loss)
 void ResetApplet(Side s);                // Reset() then Start()
 bool EditMode(Side s);
 const char *AppletName(Side s);

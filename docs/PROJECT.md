@@ -62,7 +62,8 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   Tier 2 weegfx render (`task host:render`, PBM/PGM), Tier 3 applet harness (`task host:sim`)
   compiling the real `HemisphereApplet.cpp`/`HSUtils.cpp`/`HSIOFrame.cpp` against `host/stub/`.
   SDL interactive sim planned, not built.
-- Host gaps: one applet per side, no HemisphereManager/select mode/ClockSetup UI; no MIDI/EEPROM.
+- Host gaps: one applet per side, no HemisphereManager/select mode; no MIDI/EEPROM. The real
+  ClockSetup screen is shown and operable in the sim (Up+Down or `G`; scenario `clocksetup_screen`).
   Since 2026-10-20 the real `HS::clock_m` + `ClockSetup::Controller()` run in the sim
   (internal clock, multipliers, PPQN/TR1 sync; `docs/HOST_SIM.md`).
 - `custom_min` currently 92,836 B flash / 20,472 B RAM.

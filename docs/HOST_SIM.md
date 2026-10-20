@@ -83,6 +83,9 @@ one if the left hemisphere is empty).
 | `--expect-rises K N` | output K (0..3) rose from 0 to non-zero N times (`N` or `LO..HI`) in the current segment; prints PASS/FAIL |
 | `--expect-same K A B N` | the first N rises of output K in segments A and B show identical values on all four outputs |
 | `--expect-bpm N` | internal clock tempo (`N` or `LO..HI`) |
+| `--expect-state TEXT` | the final state line (`t=... mult=x3,off,...`) contains `TEXT` |
+| `--keys LIST` | panel keys as in the SDL window, tap or `down:`/`up:` prefix: `q`/`e` Up/Down (`down:q,down:e,up:q,up:e` opens ClockSetup), `g` toggle ClockSetup, `a`/`d`, `j`/`l` encoders, `s`/`k` pushes |
+| `--png FILE` | write the current 128x64 frame as PNG (relative to `--out`) |
 
 Any FAIL makes the harness exit 1. The final line also prints the internal clock state:
 `int=running bpm=120 ppqn=4 mult=x4,off,off,off`.
@@ -109,9 +112,24 @@ edge; `OC::ui` with a no-op `_Poke()`. `usbMIDI.sendRealTime` is the existing no
 
 In: tempo, start / arm / stop, per-slot multiplier (x1..x24, ÷2..÷32, off), Input PPQN,
 external sync on TR1 (averaging, nudge, auto-stop are upstream code and run), auto_reset.
-Not in: the ClockSetup UI (`View()`, encoder/button handling are compiled but not reachable;
-no Up+Down overlay), tap tempo, shuffle, boops, MIDI clock (no MIDI input), trigger-map
-editing (default sources TRn only). Multipliers start at 0 (off) like a fresh
+**ClockSetup screen.** The real `ClockSetup_instance` screen is shown and operated like
+`APP_HEMISPHERE.h` does: open with the Up+Down dual press (`DelegateSelectButtonPush`,
+`APP_HEMISPHERE.h:669-676`: second button down while the other is held, both releases
+ignored), close with any later single Up/Down click (`APP_HEMISPHERE.h:663-665`). While open,
+`Render()` draws `ClockSetup_instance.View()` over the applets (`APP_HEMISPHERE.h:569-570`),
+left encoder → `OnLeftEncoderMove()`, right encoder → `OnEncoderMove()`
+(`APP_HEMISPHERE.h:739-744`), either encoder push → `OnButtonPress()` (`APP_HEMISPHERE.h:595`;
+the sim fires it on release, hardware on button down). Hooks: `host_clocksetup.cpp`
+(`HostClockSetupView/Encoder/Press`), state + button gesture in `sim_core` (`ButtonDown/Up`,
+`ClockSetupShow`). While open, `sim_core` calls `View()` into a scratch frame every
+`kViewKeepaliveTicks` (500) ticks, because `View()` restarts its slide-in animation when it
+was not called for > 1000 ticks (the real display redraws every frame). Screen shortcut: `G`.
+Operable through the screen: play/stop/arm, tempo (incl. tap tempo by repeated pushes on
+Tempo), shuffle, Sync PPQN, multipliers (right enc ±1, left enc ×2/÷2), trigger-map source,
+boops, in/out skip. ClockSetup leaves edit mode on its own after a few hundred ms, as on
+hardware. Not in: MIDI clock (no MIDI input), popups (`HS::PokePopup` is real but
+`DrawPopup` is never called), the clock indicator icon (`DrawIndicator()`) while the screen
+is closed, help/select/config screens. Multipliers start at 0 (off) like a fresh
 `ClockManager`; on hardware they come from the preset.
 
 ### Scenarios
@@ -127,6 +145,7 @@ per engine step.
 | `likembe_src_tr1_jack_override` | Src TR1, internal clock running at 120 BPM with x4 on slot 1, scripted TR1 pulses every 500 ms → exactly 4 steps in 2 s (physical jack, internal clock ignored) |
 | `likembe_rst_clockstart` | Rst Off: run 1.3 s (11 steps), stop, start again → the first 10 steps repeat the first run exactly (clock start restarts at bar start) |
 | `likembe_rst_tr2` | Rst TR2, Roll Off: run 1.3 s (11 steps), one TR2 pulse → the next 10 steps repeat the first run exactly |
+| `clocksetup_screen` | Hello left; Up+Down opens ClockSetup, cursor → Tempo, edit, 120 → 100, cursor → slot-1 multiplier, off → x3, cursor → trigger map, Up click closes; `--expect-bpm 100`, `--expect-state "mult=x3,"`; PNGs `host/build/out/clocksetup_{tempo,mult,trigmap}.png` |
 | `likembe_ext_sync_tr1` | armed clock at 120 BPM, TR1 pulses at 150 BPM x 4 PPQN: starts on TR1, tempo 149..151 BPM, x2 → 9 steps in 1.9 s |
 
 ### Clock source and triggers
@@ -206,7 +225,10 @@ is configured 120:4 but stopped), `--clock-tr N`, `--trig N@T`, `--keys LIST`,
 | `K` | right encoder push | as above |
 | `Q` | Up button (A, left), on release | while editing: `AuxButton()` (cancels edit); otherwise select mode, which needs `HemisphereManager` -> hint only |
 | `E` | Down button (B, right), on release | same for the right hemisphere |
-| `Q`+`E` held together | Clock Setup UI | not simulated (the clock itself runs, see `I`/`-`/`=`/`M`/`N`) -> hint; both releases are swallowed like the firmware's ignore mask |
+| `Q`+`E` held together | open the ClockSetup screen | dual press, `APP_HEMISPHERE.h:669-676`; both releases ignored (`SetButtonIgnoreMask`) |
+| `Q` or `E` click while ClockSetup is open | close it | `APP_HEMISPHERE.h:663-665` |
+| `G` | toggle the ClockSetup screen (shortcut) | |
+| encoders / pushes while ClockSetup is open | left enc `OnLeftEncoderMove`, right enc `OnEncoderMove`, push `OnButtonPress` | `APP_HEMISPHERE.h:595,739-744` |
 | `1`..`4` | select CV input (highlighted `>` row) | |
 | `Up` / `Down` | selected CV +/- 1 semitone (128 units) | |
 | `Shift`+`Up`/`Down` | selected CV +/- 1 octave (1536 units) | clamped to +/-10 V |
@@ -289,7 +311,7 @@ host/run_sim.sh --ui --headless --screenshot-after 0.5 --keys s,d,d,d,1,shift+up
 ### Limits / adding applets
 
 - Applets: whatever `host/sim/host_applets.h` lists (see "Adding an applet to the host registry").
-- No ClockSetup UI, select mode, help/config screens, presets, MIDI, EEPROM (the internal
+- No select mode, help/config screens, presets, MIDI, EEPROM (the internal
   clock runs, see "Internal clock").
 
 
@@ -367,9 +389,9 @@ To simulate a new applet: add it to `host/sim/host_applets.h` (see "Adding an ap
 ## Known gaps
 
 - Host registry only (`host_applets.h`), one applet per hemisphere; no `HemisphereManager`,
-  presets, config menu, ClockSetup UI (the controller runs), MIDI in/out, EEPROM.
-- Internal clock: no tap tempo, shuffle, boops or MIDI clock commands; trigger map stays on
-  its default sources (no div/mult/Euclid editing); skip filters off.
+  presets, config menu, MIDI in/out, EEPROM (the ClockSetup screen is available).
+- Internal clock: no MIDI clock; shuffle, boops, trigger-map sources and skips only via the
+  ClockSetup screen (no script options).
 - Outputs are read from `frame.ViewOut()` (pitch units), not DAC codes; the
   DAC calibration is a dummy.
 - `OC::ADC` returns the scripted value directly: no smoothing, offset, noise.
@@ -377,9 +399,9 @@ To simulate a new applet: add it to `host/sim/host_applets.h` (see "Adding an ap
 - Firmware TUs (incl. `sim_core.cpp`) compile with `-w` (upstream code is noisy
   on clang); `sim_main.cpp`/`ui_main.cpp` use `-Wall -Wextra`; tests use `-Werror`.
 - Interactive mode: no mouse, no encoder long-press (left long release = clock run on
-  hardware; use `I`), no select mode / ClockSetup overlay.
+  hardware; use `I`), no select mode.
 
 ## Next steps
 
-- Tick `HemisphereManager` for select mode and the ClockSetup overlay in the UI.
+- Tick `HemisphereManager` for select mode in the UI.
 - Golden-image tests: compare `sim.pbm` against checked-in references.

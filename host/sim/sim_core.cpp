@@ -10,6 +10,9 @@
 
 void HostTrigIsr(int ch);           // host_clocksetup.cpp
 void HostClockSetupController();    // host_clocksetup.cpp
+void HostClockSetupView();          // host_clocksetup.cpp
+void HostClockSetupEncoder(bool left, int direction);
+void HostClockSetupPress();
 
 static_assert(simcore::kTickHz == OC_CORE_ISR_FREQ, "tick rate mismatch");
 static_assert(simcore::kFrameBytes == weegfx::Graphics::kFrameSize, "frame size mismatch");
@@ -19,6 +22,13 @@ namespace simcore {
 namespace {
 HemisphereApplet *applets[2] = {nullptr, nullptr};
 uint8_t fb[weegfx::Graphics::kFrameSize];
+uint8_t scratch_fb[weegfx::Graphics::kFrameSize];
+// ClockSetup screen (APP_HEMISPHERE.h clock_setup) and the select buttons.
+bool clock_setup = false;
+bool btn_held[2] = {}, btn_ignore[2] = {};
+// The real display redraws every frame; ClockSetup::View() restarts its slide-in
+// animation when it was not called for > 1000 ticks. Keep it "seen" while open.
+constexpr uint32_t kViewKeepaliveTicks = 500;
 const uint8_t kPins[4] = {TR1, TR2, TR3, TR4};
 HemisphereApplet *A(Side s) { return applets[s]; }
 
@@ -112,6 +122,11 @@ void Tick() {
   HS::clock_m.auto_reset = false;
   HemisphereApplet::ProcessCursors();
   HS::frame.Send();
+  if (clock_setup && now % kViewKeepaliveTicks == 0) {
+    graphics.Begin(scratch_fb, weegfx::CLEAR_FRAME_ENABLE);
+    HostClockSetupView();
+    graphics.End();
+  }
 
   // Output observation.
   const int32_t gate_level = PULSE_VOLTAGE * ONE_OCTAVE;
@@ -137,6 +152,7 @@ const uint8_t *Render() {
   graphics.Begin(fb, weegfx::CLEAR_FRAME_ENABLE);
   for (int h = 0; h < 2; ++h)
     if (applets[h]) applets[h]->BaseView();
+  if (clock_setup) HostClockSetupView();  // overlay, like APP_HEMISPHERE.h
   graphics.End();
   return fb;
 }
@@ -189,10 +205,38 @@ void SetOutListener(OutListener *l) { listener = l; }
 int64_t LastOutTrigTick(int ch) { return last_trig[ch & 3]; }
 
 void EncoderMove(Side s, int n) {
+  if (clock_setup) {
+    for (int k = 0; k < (n < 0 ? -n : n); ++k) HostClockSetupEncoder(s == kLeft, n > 0 ? 1 : -1);
+    return;
+  }
   if (auto *a = A(s))
     for (int k = 0; k < (n < 0 ? -n : n); ++k) a->OnEncoderMove(n > 0 ? 1 : -1);
 }
-void EncoderPress(Side s) { if (auto *a = A(s)) a->OnButtonPress(); }
+void EncoderPress(Side s) {
+  if (clock_setup) return HostClockSetupPress();
+  if (auto *a = A(s)) a->OnButtonPress();
+}
+bool ClockSetupOpen() { return clock_setup; }
+void ClockSetupShow(bool on) { clock_setup = on; }
+// APP_HEMISPHERE.h DelegateSelectButtonPush(): second button down while the
+// other is held opens ClockSetup and ignores both releases (SetButtonIgnoreMask);
+// any later single-click release closes it.
+ButtonResult ButtonDown(Side s) {
+  btn_held[s] = true;
+  if (btn_held[1 - s]) {
+    clock_setup = true;
+    btn_ignore[0] = btn_ignore[1] = true;
+    return kBtnOpened;
+  }
+  return kBtnNone;
+}
+ButtonResult ButtonUp(Side s) {
+  btn_held[s] = false;
+  if (btn_ignore[s]) { btn_ignore[s] = false; return kBtnNone; }
+  if (clock_setup) { clock_setup = false; return kBtnClosed; }
+  return SelectButton(s) ? kBtnAux : kBtnNoManager;
+}
+void ReleaseButtons() { btn_held[0] = btn_held[1] = btn_ignore[0] = btn_ignore[1] = false; }
 bool SelectButton(Side s) {
   auto *a = A(s);
   if (!a || !a->EditMode()) return false;
