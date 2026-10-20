@@ -98,6 +98,11 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   applet writes to ClockSetup, which persists the value). Src TRn Div = 1..8, 12, 16. Clock
   block 13 bits at 48–60. Lab: slot multipliers back, shared with the voice Div.
   `custom_min` 100,052 B flash / 20,824 B RAM (+320 B / 0 B, `task size`).
+  2026-10-20 (host + sim-verified, not hardware): one clock multiplier list in ClockSetup and
+  the applet (`custom/core/clock_mult_list.h`: off /4 /3 /2 x1..x8 x12). `ClockSetup.h` edited
+  under `CUSTOM_BUILD`: both encoders step a slot multiplier through the list. Applet Src Int
+  Div steps the same list without off; ClockSetup notation only, note names removed (applet
+  and lab). Src TRn Div = 1..8, 12. `custom_min` 99,788 B flash / 20,824 B RAM (-264 B / 0 B).
 - Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 18 combinations incl. Len 1/2/7/12/16/24/32). `Len` range is 1..32 (Len 1 allowed 2026-10-20; offset parts silent there).
 
 ### Open decisions
@@ -129,3 +134,4 @@ Hello hardware check (Phase 1 remainder) can be done with the same flash.
 | 2026-10-20 | TRn in applet clock settings = physical jack, not ClockSetup-routed | `Src`/`Roll`/`Rst TRn` read rising edges of `frame.gate_high[n-1]`; `Int` is the only routed source; `Rst Int` dropped (clock start restarts anyway) |
 | 2026-10-20 | Clock page model: applets step once per pulse; `Src Int` = upstream routing (`Clock(0)`), `Src TRn` = `frame.clocked[n-1]` + pulse counter only (TRn superseded by the physical-jack row above); Roll/Rst trigger inputs per applet; applet-drawn sub-page with `Back` row | No tempo logic in applets; one place (ClockSetup) owns tempo/multipliers. Details `docs/CLOCK.md` |
 | 2026-10-20 | Real `ClockSetup`/`HS::clock_m` compiled into the host sim | `Src Int` / `Rst Int` / external sync become host-testable without stubbing clock behaviour |
+| 2026-10-20 | One multiplier list in ClockSetup and applet; ClockSetup.h edited under CUSTOM_BUILD | Same values and steps in both places, encoders step the list (off /4 /3 /2 x1..x8 x12), no note names. Details `docs/CLOCK.md` 2, `docs/UPSTREAM.md` |

@@ -149,7 +149,8 @@ per engine step.
 | `likembe_src_tr1_jack_override` | Src TR1, internal clock running at 120 BPM with x4 on slot 1, scripted TR1 pulses every 500 ms → exactly 4 steps in 2 s (physical jack, internal clock ignored) |
 | `likembe_rst_clockstart` | Src Int (slot x4), 120 BPM, Rst Off: run 1.3 s (11 steps), stop, start again → the first 10 steps repeat the first run exactly (clock start restarts at bar start) |
 | `likembe_rst_tr2` | Rst TR2, Roll Off: run 1.3 s (11 steps), one TR2 pulse → the next 10 steps repeat the first run exactly |
-| `clocksetup_screen` | Hello left; Up+Down opens ClockSetup, cursor → Tempo, edit, 120 → 100, cursor → slot-1 multiplier, off → x3, cursor → trigger map, Up click closes; `--expect-bpm 100`, `--expect-state "mult=x3,"`; PNGs `host/build/out/clocksetup_{tempo,mult,trigmap}.png` |
+| `clocksetup_screen` | Hello left; Up+Down opens ClockSetup, cursor → Tempo, edit, 120 → 100, cursor → slot-1 multiplier, off → x3 (list steps), cursor → trigger map, Up click closes; `--expect-bpm 100`, `--expect-state "mult=x3,"`; PNGs `host/build/out/clocksetup_{tempo,mult,trigmap}.png`. off → x3 = 6 right-encoder steps through the shared list |
+| `clocksetup_mult_list` | Shared multiplier list in ClockSetup (`CUSTOM_BUILD` edit): cursor → slot-1 multiplier, edit, right encoder 13 steps from off → `mult=x12,` (clamps at x12; PNG `clocksetup_mult_x12.png`), left encoder 13 steps → `mult=off,` |
 | `likembe_ext_sync_tr1` | armed clock at 120 BPM, TR1 pulses at 150 BPM x 4 PPQN: starts on TR1, tempo 149..151 BPM, Src Int, slot 1 x4 → 18..20 steps in 1.9 s (10 steps/s at 150 BPM) |
 
 ### Clock source and triggers

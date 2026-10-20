@@ -373,8 +373,10 @@ TEST(clock_pack_unpack) {
   CHECK(d.src == lk::kSrcInt && d.div_tr_idx == 0 && d.TrDiv() == 1 && d.roll_in == lk::kRollTr2 && d.rst_in == lk::kRstOff);
   d.StepTrDiv(-1); CHECK(d.TrDiv() == 1);
   for (int i = 0; i < 20; ++i) d.StepTrDiv(1);
-  CHECK(d.TrDiv() == 16 && d.div_tr_idx == lk::kTrDivCount - 1);
-  d.StepTrDiv(-1); CHECK(d.TrDiv() == 12);
+  CHECK(d.TrDiv() == 12 && d.div_tr_idx == lk::kTrDivCount - 1);
+  d.StepTrDiv(-1); CHECK(d.TrDiv() == 8);
+  for (int i = 0; i < lk::kTrDivCount; ++i)   // TRn Div = the x side of the shared list
+    CHECK(lk::kTrDivs[i] == custom::clock_mult::At(i + 4));
   for (int s = 0; s < lk::kSrcCount; ++s)
     for (int r = 0; r < lk::kRollCount; ++r)
       for (int t = 0; t < lk::kRstCount; ++t)
@@ -397,19 +399,24 @@ TEST(clock_pack_unpack) {
   CHECK(std::memcmp(&q, &a.params, sizeof q) == 0);
   LikembeClock k2 = LikembeClock::Unpack(all);
   CHECK(k2.src == k.src && k2.div_tr_idx == 7 && k2.roll_in == k.roll_in && k2.rst_in == k.rst_in);
-  // Int multiplier list: /4 /3 /2 x1 x2 x3 x4 x5 x6 x7 x8 x12
+  // Shared list (ClockSetup + applet): off /4 /3 /2 x1..x8 x12
+  namespace cm = custom::clock_mult;
+  CHECK(cm::Count() == 13 && cm::IndexOf(0) == 0 && cm::IndexOf(12) == 12 && cm::IndexOf(9) == -1);
+  CHECK(cm::Step(0, 1) == -3 && cm::Step(0, -1) == 0 && cm::Step(-3, -1) == 0);
+  CHECK(cm::Step(8, 1) == 12 && cm::Step(12, 1) == 12 && cm::Step(1, -1) == -1);
+  CHECK(cm::Step(9, 1) == 12 && cm::Step(9, -1) == 8);                     // off-list snaps
+  CHECK(cm::Step(-31, 1) == -3 && cm::Step(-31, -1) == 0 && cm::Step(24, -1) == 12);
+  CHECK(cm::Step(5, 0) == 5);
+  { int m = 0; for (int i = 0; i < 12; ++i) m = cm::Step(m, 1); CHECK(m == 12);
+    for (int i = 0; i < 12; ++i) m = cm::Step(m, -1); CHECK(m == 0); }
+  // Applet Src Int: same list, off excluded
   CHECK(custom::StepIntMult(4, 1) == 5 && custom::StepIntMult(4, -1) == 3);
-  CHECK(custom::StepIntMult(1, -1) == -1 && custom::StepIntMult(-1, -1) == -2);
   CHECK(custom::StepIntMult(-3, -1) == -3 && custom::StepIntMult(12, 1) == 12);
-  CHECK(custom::StepIntMult(9, 1) == 12 && custom::StepIntMult(9, -1) == 8);     // off-list snaps
-  CHECK(custom::StepIntMult(0, 1) == 1 && custom::StepIntMult(0, -1) == -1);
-  CHECK(custom::StepIntMult(-31, 1) == -3 && custom::StepIntMult(24, -1) == 12);
+  CHECK(custom::StepIntMult(0, 1) == -3 && custom::StepIntMult(0, -1) == -3);
   char b[6];
-  CHECK(std::strcmp(custom::FormatMult(4, b), "x4") == 0 && std::strcmp(custom::FormatMult(-1, b), "/2") == 0);
-  CHECK(std::strcmp(custom::FormatMult(12, b), "x12") == 0 && std::strcmp(custom::FormatMult(-31, b), "/32") == 0);
-  CHECK(std::strcmp(custom::FormatMult(0, b), "off") == 0);
-  CHECK(std::strcmp(lk::MultNoteName(4), "1/16") == 0 && std::strcmp(lk::MultNoteName(-3), "1/1") == 0);
-  CHECK(lk::MultNoteName(5) == nullptr && lk::MultNoteName(9) == nullptr);
+  CHECK(std::strcmp(cm::Label(4, b), "x4") == 0 && std::strcmp(cm::Label(-1, b), "/2") == 0);
+  CHECK(std::strcmp(cm::Label(12, b), "x12") == 0 && std::strcmp(cm::Label(-31, b), "/32") == 0);
+  CHECK(std::strcmp(cm::Label(0, b), "off") == 0);
   return ok;
 }
 

@@ -26,12 +26,12 @@ const C = {
   kDensityMax: 100, kOctaveMin: -2, kOctaveMax: 3, kDefaultOctave: 0, kVariationMax: 100,
   kDensityCvRange: 35,
   kPassageBars: [0, 1, 2, 3, 4, 5, 6, 7, 8],
-  // Clock page (glue): ClockSrc, Src Int = ClockSetup slot multiplier (kIntMults,
+  // Clock page (glue): ClockSrc, Src Int = ClockSetup slot multiplier (kMultList = the shared list
+  // custom/core/clock_mult_list.h, off excluded on the applet,
   // ClockManager terms: >0 = xN, <0 = /(1-N)), Src TRn Div = kTrDivs, RollIn, RstIn
   kSrcInt: 0, kSrcTr1: 1, kSrcCount: 5,
-  kIntMults: [-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 12], kDefaultIntMult: 4,
-  kMultNotes: {'-3': '1/1', '-1': '1/2', 1: '1/4', 2: '1/8', 3: '1/8T', 4: '1/16', 6: '1/16T', 8: '1/32', 12: '1/32T'},
-  kTrDivs: [1, 2, 3, 4, 5, 6, 7, 8, 12, 16], kDefaultTrDivIdx: 0,
+  kMultList: [0, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 12], kDefaultIntMult: 4,
+  kTrDivs: [1, 2, 3, 4, 5, 6, 7, 8, 12], kDefaultTrDivIdx: 0,
   kRollOff: 0, kRollTr1: 1, kRollCount: 5, kDefaultRoll: 2,
   kRstOff: 0, kRstTr1: 1, kRstCount: 5, kDefaultRst: 0,
   kDefaultPulseTicks: 2083, kTickHz: 16666,   // gate length % = lab.gatePct (kGateLengthPct)

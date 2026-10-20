@@ -156,10 +156,16 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
   persists the value. `div_int` and the MIDI_CLOCK path removed. Src TRn Div = `kTrDivs`
   (1..8, 12, 16) index, 4 bits. Clock block 13 bits at 48–60 (src 3, roll 3, rst 3, idx 4).
   Lab: per-voice slot multiplier select in the Clock section = the voice's Int Div.
-- Tests: `clock_pack_unpack` (incl. `StepIntMult`, `FormatMult`), `pulse_divider` (host); sim scenarios `likembe_int_both_sides`,
+- 2026-10-20 (user decision): one multiplier list everywhere. `custom/core/clock_mult_list.h`
+  (`clock_mult::kList` off /4 /3 /2 x1..x8 x12, `IndexOf`, `Step`, `Label`) replaces
+  `kIntMults`/`FormatMult`; note names (`kMultNotes`) removed. ClockSetup.h edited under
+  `CUSTOM_BUILD`: both encoders step a slot multiplier through the list (`docs/UPSTREAM.md`).
+  Applet Src Int Div = `Step(m, dir, kIntMultLo)` (off excluded); `Div` value at x 34 like
+  the other rows. Src TRn `kTrDivs` = 1..8, 12 (16 dropped). Lab: same list, no note names.
+- Tests: `clock_pack_unpack` (incl. `clock_mult::Step/IndexOf/Label`, `StepIntMult`), `pulse_divider` (host); sim scenarios `likembe_int_both_sides`,
   `likembe_int_stopped_tr1_ignored`, `likembe_int_div_from_clocksetup`, `likembe_int_div_from_applet`,
   `likembe_src_tr1_div3`, `likembe_src_tr1_jack_override`, `likembe_rst_clockstart`,
-  `likembe_rst_tr2`, `likembe_ext_sync_tr1` (real ClockSetup in
+  `likembe_rst_tr2`, `likembe_ext_sync_tr1`, `clocksetup_mult_list` (real ClockSetup in
   the sim); lab (2026-10-20: BPM + Start/Stop + slot multipliers shared with the voice Div; node syntax check only): earlier ClockSetup model verified in headless Chrome (step counts for x4, steady
   TR1 / Div 3, manual pulses, Rst restart; at the time with Rst Int, not re-run after the 2026-10-20 TRn change) with a stubbed AudioContext.
 

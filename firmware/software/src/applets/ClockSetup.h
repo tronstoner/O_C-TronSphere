@@ -20,6 +20,12 @@
 
 #pragma once
 
+// --- custom build ---
+#ifdef CUSTOM_BUILD
+#include "custom/core/clock_mult_list.h"
+#endif
+// --- end custom build ---
+
 using HS::clock_m;
 
 class ClockSetup : public HemisphereApplet {
@@ -225,7 +231,16 @@ public:
         case MULT2:
         case MULT3:
         case MULT4:
+// --- custom build ---
+#ifdef CUSTOM_BUILD
+            // one shared multiplier list (custom/core/clock_mult_list.h, docs/CLOCK.md)
+            clock_m.SetMultiply(custom::clock_mult::Step(clock_m.GetMultiply(cursor - MULT1), direction), cursor - MULT1);
+#else
+// --- end custom build ---
             clock_m.SetMultiply(clock_m.GetMultiply(cursor - MULT1) + direction, cursor - MULT1);
+// --- custom build ---
+#endif
+// --- end custom build ---
             break;
 
         default: break;
@@ -235,9 +250,17 @@ public:
       if (EditMode() && cursor >= MULT1 && cursor <= MULT4) {
         int mult = clock_m.GetMultiply(cursor - MULT1);
 
+// --- custom build ---
+#ifdef CUSTOM_BUILD
+        mult = custom::clock_mult::Step(mult, direction);  // same list as the right encoder
+#else
+// --- end custom build ---
         if (0 == mult) mult += direction;
         else if (mult > 0) mult = (direction > 0) ? mult * 2 : mult / 2;
         else mult = ((direction > 0) ? (mult - 1) / 2 : (mult - 1) * 2) + 1;
+// --- custom build ---
+#endif
+// --- end custom build ---
 
         clock_m.SetMultiply(mult, cursor - MULT1);
       }

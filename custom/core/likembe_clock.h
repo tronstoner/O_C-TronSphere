@@ -6,6 +6,7 @@
 #pragma once
 #include <cstdint>
 #include "custom/core/likembe_constants.h"
+#include "custom/core/clock_mult_list.h"
 
 namespace custom {
 
@@ -58,43 +59,9 @@ struct LikembeClock {
   }
 };
 
-// Src Int Div encoder step over likembe::kIntMults. A value in the list moves one
-// entry (clamped at the ends); a value outside it (e.g. x9 or off from ClockSetup)
-// snaps to the nearest entry in the direction of travel. |dir| > 1 = that many steps.
-inline int8_t StepIntMult1(int cur, int dir) {
-  using namespace likembe;
-  int idx = -1;
-  for (int i = 0; i < kIntMultCount; ++i) if (kIntMults[i] == cur) idx = i;
-  if (idx >= 0) {
-    idx += dir > 0 ? 1 : -1;
-    if (idx < 0) idx = 0;
-    if (idx >= kIntMultCount) idx = kIntMultCount - 1;
-    return kIntMults[idx];
-  }
-  if (dir > 0) {
-    for (int i = 0; i < kIntMultCount; ++i) if (kIntMults[i] > cur) return kIntMults[i];
-    return kIntMults[kIntMultCount - 1];
-  }
-  for (int i = kIntMultCount - 1; i >= 0; --i) if (kIntMults[i] < cur) return kIntMults[i];
-  return kIntMults[0];
-}
-
+// Src Int Div encoder step: next entry of the shared list, off excluded.
 inline int8_t StepIntMult(int cur, int dir) {
-  int8_t m = (int8_t)cur;
-  for (int n = dir < 0 ? -dir : dir; n > 0; --n) m = StepIntMult1(m, dir);
-  return dir == 0 ? (int8_t)cur : m;
-}
-
-// ClockSetup notation into buf (>= 5 chars): "x4", "/2", "off". Integer only.
-inline const char* FormatMult(int m, char* buf) {
-  if (m == 0) { buf[0] = 'o'; buf[1] = 'f'; buf[2] = 'f'; buf[3] = 0; return buf; }
-  int v = m > 0 ? m : 1 - m;
-  int n = 0;
-  buf[n++] = m > 0 ? 'x' : '/';
-  if (v >= 10) buf[n++] = (char)('0' + v / 10);
-  buf[n++] = (char)('0' + v % 10);
-  buf[n] = 0;
-  return buf;
+  return clock_mult::Step(cur, dir, likembe::kIntMultLo);
 }
 
 // One step every `div` input pulses, decrement only: fires on the first pulse

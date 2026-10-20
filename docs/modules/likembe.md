@@ -73,7 +73,7 @@ row, the other hemisphere's button (`AuxButton`) cancels the edit and also retur
 | Row | Function | Values | Default | Takes effect |
 |---|---|---|---|---|
 | `Src` | Step clock source | `Int` (= this hemisphere's ClockSetup slot, `clock_m.IsRunning() && clock_m.Tock(io_offset)`; no steps while stopped), `TR1`..`TR4` (= physical jack, rising edge of `frame.gate_high[n-1]`) | `Int` (`kSrcInt`) | next tick; changing it re-arms the divider; switching to `Int` sets x4 on the slot if it is off |
-| `Div` | `Src Int`: **the ClockSetup slot multiplier** (`GetMultiply(io_offset)` / `SetMultiply(m, io_offset)`, written immediately, persisted by ClockSetup, not by the applet). Shown in ClockSetup notation plus note name when known (`kMultNotes`): `/4 1/1`, `/2 1/2`, `x1 1/4`, `x2 1/8`, `x3 1/8T`, `x4 1/16`, `x6 1/16T`, `x8 1/32`; `x12` (no room for `1/32T`), `/3`, `x5`, `x7` without name. A value outside the list (set in ClockSetup, e.g. `x9`) is shown as is; the next step snaps to the nearest list entry in that direction. `Src TRn`: jack pulses per step, shown as the number | Int: `/4 /3 /2 x1 x2 x3 x4 x5 x6 x7 x8 x12` (`kIntMults`); TRn: `1 2 3 4 5 6 7 8 12 16` (`kTrDivs`, index persisted) | Int: x4 = 1/16 (`kDefaultIntMult`, set on load / Src→Int when the slot is off); TRn 1 (`kDefaultTrDivIdx`) | Int: the slot's next tock; TRn: next pulse (decrement counter, fires on the first pulse after a reset; a Div lowered below the pulses still pending fires on the next pulse) |
+| `Div` | `Src Int`: **the ClockSetup slot multiplier** (`GetMultiply(io_offset)` / `SetMultiply(m, io_offset)`, written immediately, persisted by ClockSetup, not by the applet). Steps through the shared multiplier list (`custom/core/clock_mult_list.h`, same list and steps as ClockSetup's encoders, `docs/CLOCK.md` 2) excluding off; shown in ClockSetup notation only (`x4`, `/2`), no note names. A value outside the list (set in ClockSetup, e.g. `x9`) is shown as is; the next step snaps to the nearest list entry in that direction. `Src TRn`: jack pulses per step, shown as the number | Int: `/4 /3 /2 x1 x2 x3 x4 x5 x6 x7 x8 x12` (`clock_mult::kList` from index `kIntMultLo`); TRn: `1 2 3 4 5 6 7 8 12` (`kTrDivs`, index persisted) | Int: x4 (`kDefaultIntMult`, set on load / Src→Int when the slot is off); TRn 1 (`kDefaultTrDivIdx`) | Int: the slot's next tock; TRn: next pulse (decrement counter, fires on the first pulse after a reset; a Div lowered below the pulses still pending fires on the next pulse) |
 | `Roll` | Re-roll trigger input, physical jack (immediate re-roll; the main-list `Roll` bars setting is separate) | `Off`, `TR1`..`TR4` | `TR2` on both hemispheres (`kDefaultRoll`) | next tick |
 | `Rst` | Restart trigger input, physical jack: `Reset()` = bar start, phases 0, figures kept, divider re-armed | `Off`, `TR1`..`TR4` | `Off` (`kDefaultRst`) | next tick |
 | `Back` | Return to the main list | — | — | — |
@@ -148,7 +148,7 @@ and is persisted by ClockSetup, not here.
 | 48–50 | src (0 = Int, 1–4 = TR1–TR4) | ≥ 5 → Int |
 | 51–53 | roll_in (0 = Off, 1–4 = TR1–TR4) | ≥ 5 → TR2 |
 | 54–56 | rst_in (0 = Off, 1–4 = TR1–TR4) | ≥ 5 → Off |
-| 57–60 | div_tr_idx (0..9 into `kTrDivs` 1 2 3 4 5 6 7 8 12 16) | ≥ 10 → 0 (Div 1) |
+| 57–60 | div_tr_idx (0..8 into `kTrDivs` 1 2 3 4 5 6 7 8 12) | ≥ 9 → 0 (Div 1; old presets with index 9 = 16 load as 1) |
 | 61–63 | unused (written 0) | ignored |
 
 Presets saved before this layout (2026-10-20) load with arbitrary but valid Clock page
@@ -167,7 +167,7 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
 
 - **Clock (top):** the internal clock (`docs/CLOCK.md` 2): `Start`/`Stop` (Start resets
   every voice like upstream auto_reset), `BPM`, and the ClockSetup multipliers of slot 1
-  (Voice 1) and slot 3 (Voice 2) with the curated list and note names; `Src Int` steps on
+  (Voice 1) and slot 3 (Voice 2) with the shared list (off excluded) in ClockSetup notation; `Src Int` steps on
   that slot's tock. The same value is the voice's Clock page `Div` with `Src Int` (one value,
   shown in both places; `off` and off-list values are not modelled, slots start at x4). TR1..TR4:
   `pulse` button (one pulse) and `steady` (4 pulses per beat at the BPM, for testing
@@ -238,13 +238,12 @@ default in `labDefaults()` (`likembe_engine.js`) to the same values, `task host:
 
 **Clock page** replaces the whole view while open: five rows at y 14, 24, 34, 44, 54
 (10 px pitch, last row ends at y 61): label at x 1 (`Src`, `Div`, `Roll`, `Rst`, `Back`),
-value at x 34 (`Int`/`TR1`..`TR4`, `Off`/`TRn`, `Off`/`TRn`); the `Div` value starts at
-x 21 (`kPageDivX`): with `Src Int` the multiplier (`x4`, `/2`, `x9`, `off`), a 2 px gap
-(`kNoteGap`) and the note name if it ends by x 63 (`x6 1/16T` does, `x12 1/32T` does not, so
-x12 shows no name); with `Src TRn` the pulse count. Cursor = upstream `gfxCursor`: blinking underline under
+value at x 34 (`kPageValX`) on every row (`Int`/`TR1`..`TR4`; `Div`: with `Src Int` the
+multiplier in ClockSetup notation `x4`, `/2`, `x12`, off-list `x9`/`off`, no note name; with
+`Src TRn` the pulse count; `Off`/`TRn`, `Off`/`TRn`). Cursor = upstream `gfxCursor`: blinking underline under
 the value (to x 63), under the label on `Back`; inverted value while editing. Verified with
-host screenshots (`host/run_sim.sh ... --png`, 2026-10-20): `Div x4 1/16`, `Div x6 1/16T`,
-`Div /4 1/1`, `Div x9` (set via `--mult 1:x9`), Src TR1 `Div 3`.
+host screenshots (`host/run_sim.sh ... --png`, 2026-10-20): `Div x4` (shared list, no note
+name); earlier: `Div x9` (set via `--mult 1:x9`), Src TR1 `Div 3`.
 
 **Bar counter.** N = lcm(2·nL, 2·nR, B) / B bars (B = pulses per bar, nL/nR = loop lengths in strokes) is the realignment cycle after which both thumbs start the bar on element 0 again; the part's start offset shifts both thumbs equally and does not change N. Bass Len 16 L4/R3: 3; Bass Len 12 L3/R4: 2; fitting loops (Lead): 1. i = bar playing now, 1..N (the filled square). Rule (core `SyncCycle`): N is recomputed and i restarts at 1 on `Reset()`, whenever figures are generated (Init, Len/part/seed change, re-roll, new passage -- phases restart at 0) and when a mutation or return-to-theme changes a loop length; otherwise i advances at each bar line and wraps N -> 1. Max reachable N is 112 (L7/R8 at a Len coprime to 14 and 16, e.g. 31; segment fallback above 12 bars).
 

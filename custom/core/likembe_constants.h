@@ -103,23 +103,14 @@ constexpr uint16_t kDefaultSeed = 1;
 // internal clock only, never the jack); TRn = the physical jack, rising edge of
 // HS::frame.gate_high[n-1].
 enum ClockSrc : uint8_t { kSrcInt = 0, kSrcTr1, kSrcTr2, kSrcTr3, kSrcTr4, kSrcCount };
-// Src Int Div = the ClockSetup slot multiplier itself (ClockManager terms: >0 = xN,
-// <0 = /(1-N), 0 = off). The applet steps through this curated list and writes
-// HS::clock_m.SetMultiply(); ClockSetup persists it. Values outside the list
-// (set in ClockSetup) are shown as is; the next encoder step snaps into the list.
-constexpr int8_t kIntMults[] = {-3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 12};   // /4 /3 /2 x1..x8 x12
-constexpr int kIntMultCount = sizeof(kIntMults) / sizeof(kIntMults[0]);
-constexpr int8_t kDefaultIntMult = 4;         // x4 = 1/16, set when the slot is off
-// Note names for slot multipliers (one beat = 1/4); other values show the multiplier only.
-struct MultNote { int8_t mult; const char* name; };
-constexpr MultNote kMultNotes[] = {{-3, "1/1"}, {-1, "1/2"}, {1, "1/4"}, {2, "1/8"}, {3, "1/8T"},
-                                   {4, "1/16"}, {6, "1/16T"}, {8, "1/32"}, {12, "1/32T"}};
-inline const char* MultNoteName(int mult) {
-  for (const MultNote& n : kMultNotes) if (n.mult == mult) return n.name;
-  return nullptr;
-}
+// Src Int Div = the ClockSetup slot multiplier itself (ClockManager terms). The applet
+// steps through the shared list custom::clock_mult::kList (custom/core/clock_mult_list.h,
+// same list as ClockSetup) excluding off, and writes HS::clock_m.SetMultiply();
+// ClockSetup persists it. Off-list values (old presets) snap on the next step.
+constexpr int kIntMultLo = 1;                 // list index of /4: off is not selectable here
+constexpr int8_t kDefaultIntMult = 4;         // x4, set when the slot is off
 // Src TRn Div: jack pulses per engine step (decrement counter), index into this list.
-constexpr uint8_t kTrDivs[] = {1, 2, 3, 4, 5, 6, 7, 8, 12, 16};
+constexpr uint8_t kTrDivs[] = {1, 2, 3, 4, 5, 6, 7, 8, 12};   // = the x side of clock_mult::kList
 constexpr uint8_t kTrDivCount = sizeof(kTrDivs);
 constexpr uint8_t kDefaultTrDivIdx = 0;       // Div 1
 // Roll: trigger input (physical jack) for an immediate re-roll. Same default on both sides.

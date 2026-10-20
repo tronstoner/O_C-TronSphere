@@ -75,7 +75,8 @@ ClockSetup's TRIG rows (`applets/ClockSetup.h:185-189`).
 | x16 | 1/64 | | |
 | x24 | 1/64T | | |
 
-Other values have no common note name. The browser lab uses the same labels.
+Other values have no common note name. Reference only: since 2026-10-20 neither the applet
+nor the browser lab shows note names (ClockSetup notation only, section 2).
 
 ## 2. Our rule for applets (decided 2026-10-20, revised the same day)
 
@@ -90,17 +91,24 @@ start when the internal clock starts. Few, musical values.
   trigger map is **not** used (no fallback to `trigmap[].Clock()` while stopped or "off").
   Runs whenever the internal clock runs (also when it follows external sync on TR1).
 - **`Div` with `Src Int`** reads `HS::clock_m.GetMultiply(io_offset)` and the encoder writes
-  `HS::clock_m.SetMultiply(m, io_offset)` immediately. Curated list (`kIntMults`,
-  ClockManager terms −3, −2, −1, 1..8, 12):
+  `HS::clock_m.SetMultiply(m, io_offset)` immediately. It steps through the **shared
+  multiplier list** (below) **excluding off**; display is ClockSetup notation only (`Div x4`,
+  `Div /2`), no note names. A value outside the list (e.g. `x9`, `/32` from an old preset)
+  is shown as is; the next encoder step snaps to the nearest list entry in that direction
+  (`custom::StepIntMult` = `clock_mult::Step(m, dir, kIntMultLo)`).
+- **One multiplier list everywhere** (decided 2026-10-20): `custom/core/clock_mult_list.h`,
+  `custom::clock_mult::kList`, ClockManager terms 0, −3, −2, −1, 1..8, 12:
 
-  | Shown | /4 | /3 | /2 | x1 | x2 | x3 | x4 | x5 | x6 | x7 | x8 | x12 |
-  |---|---|---|---|---|---|---|---|---|---|---|---|---|
-  | Note | 1/1 | – | 1/2 | 1/4 | 1/8 | 1/8T | 1/16 | – | 1/16T | – | 1/32 | 1/32T |
+  | Shown | off | /4 | /3 | /2 | x1 | x2 | x3 | x4 | x5 | x6 | x7 | x8 | x12 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 
-  Display: ClockSetup notation, then the note name when known (`kMultNotes`), e.g.
-  `Div x4 1/16`; `x12` shows no note name (does not fit 64 px). A value set in ClockSetup
-  that is not in the list (e.g. `x9`, `/32`, `off`) is shown as is; the next encoder step
-  snaps to the nearest list entry in that direction (`custom::StepIntMult`).
+  ClockSetup (`ClockSetup.h`, edited under `CUSTOM_BUILD`, `docs/UPSTREAM.md`) steps a slot
+  multiplier through the same list with **both** encoders: right encoder and left encoder
+  each move one entry per detent (upstream: right ±1 over −31..24, left doubling/halving).
+  Ends clamp (off, x12). `Step()` snaps off-list values. Label helper
+  `clock_mult::Label()` (our own; ClockSetup's display code is inline `gfxPrint` and not
+  reusable, its display is unchanged and renders the same notation). `Src TRn` Div uses the
+  x side of the list as pulse counts: `1 2 3 4 5 6 7 8 12` (`kTrDivs`).
 - **The applet writes to ClockSetup.** On load (`Start()`, after `OnDataReceive`) and when
   `Src` is switched to `Int`: if the slot multiplier is 0 (off), the applet sets x4
   (`kDefaultIntMult`). The value is persisted by ClockSetup (its `OnDataRequest`, 6 bits per
@@ -109,7 +117,7 @@ start when the internal clock starts. Few, musical values.
   until the slot is set again — not observed in the sim, check on hardware).
 - **`Src TRn`** = the physical jack. `Src TRn`, `Roll TRn`, `Rst TRn` read the rising edge
   of `HS::frame.gate_high[n-1]` (raw level, `HemisphereApplet.cpp:87-90`), edge state kept in
-  the applet. **`Div`** = jack pulses per engine step from `kTrDivs` = 1 2 3 4 5 6 7 8 12 16
+  the applet. **`Div`** = jack pulses per engine step from `kTrDivs` = 1 2 3 4 5 6 7 8 12 (the x side of the shared list)
   (index persisted, default 1; decrement counter `custom::PulseDivider`, fires on the first
   pulse after a reset).
 - **Roll / Rst inputs per applet**: an applet may offer its own trigger inputs for actions

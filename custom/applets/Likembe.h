@@ -157,9 +157,6 @@ private:
   static constexpr int kPageRowY0 = 14;  // Clock page: 5 rows, 10 px pitch (14..61)
   static constexpr int kPageRowH = 10;
   static constexpr int kPageValX = 34;   // value column; cursor 29 px to x 62
-  static constexpr int kPageDivX = 21;   // Div row: "x6" + 2 px gap + "1/16T" lit up to x 63
-  static constexpr int kNoteGap = 2;     // px between multiplier and note name
-  static int ValX(int row) { return row == kPgDiv ? kPageDivX : kPageValX; }
   static constexpr int kDensityStep = 5;
   static constexpr int kVarStep = 5;
   // Layout (y = top of element)
@@ -226,19 +223,10 @@ private:
     using namespace custom::likembe;
     switch (row) {
       case kPgSrc:  gfxPrint(clk.src == kSrcInt ? "Int" : InName(clk.src)); break;
-      case kPgDiv: {   // Int: "x4 1/16" (slot multiplier + note name if it fits); TRn: "3"
+      case kPgDiv: {   // Int: slot multiplier in ClockSetup notation ("x4"); TRn: "3"
         if (clk.src != kSrcInt) { gfxPrint(clk.TrDiv()); break; }
         char b[6];
-        const int m = HS::clock_m.GetMultiply(io_offset);
-        const char* t = custom::FormatMult(m, b);
-        gfxPrint(t);
-        const char* n = MultNoteName(m);
-        int len = 0, nl = 0;
-        while (t[len]) ++len;
-        while (n && n[nl]) ++nl;
-        const int x = kPageDivX + len * 6 + kNoteGap;
-        if (n && x + nl * 6 - 1 <= 64)   // last glyph column is blank
-          gfxPrint(x, kPageRowY0 + kPgDiv * kPageRowH, n);
+        gfxPrint(custom::clock_mult::Label(HS::clock_m.GetMultiply(io_offset), b));
         break;
       }
       case kPgRoll: gfxPrint(clk.roll_in == kRollOff ? "Off" : InName(clk.roll_in)); break;
@@ -252,11 +240,11 @@ private:
     for (int r = 0; r <= kPgLast; ++r) {
       const int y = kPageRowY0 + r * kPageRowH;
       gfxPrint(1, y, kRows[r]);
-      if (r != kPgBack) { gfxPrint(ValX(r), y, ""); PrintPageValue(r); }
+      if (r != kPgBack) { gfxPrint(kPageValX, y, ""); PrintPageValue(r); }
     }
     const int y = kPageRowY0 + page_cursor * kPageRowH;
     if (page_cursor == kPgBack) gfxCursor(1, y + 8, 25);
-    else gfxCursor(ValX(page_cursor) - 1, y + 8, 64 - ValX(page_cursor));
+    else gfxCursor(kPageValX - 1, y + 8, 64 - kPageValX);
   }
 
   void DrawParam() {

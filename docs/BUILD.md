@@ -79,7 +79,8 @@ custom/
 
 | Env | Flash (of 262144) | RAM (of 65536) |
 |---|---|---|
-| `custom_min` (Hello + Likembe, Src Int = slot multiplier, Div edits ClockSetup, 2026-10-20; `task size`, +320 B) | 100 052 B (38.2 %) | 20 824 B (31.8 %) |
+| `custom_min` (Hello + Likembe, one multiplier list in ClockSetup + applet, ClockSetup.h edited, 2026-10-20; `task size`, -264 B) | 99 788 B (38.1 %) | 20 824 B (31.8 %) |
+| `custom_min` (previous: Src Int = slot multiplier, Div edits ClockSetup, 2026-10-20) | 100 052 B (38.2 %) | 20 824 B (31.8 %) |
 | `custom_min` (previous: Src Int = 24 PPQN, Div per source, 2026-10-20) | 99 732 B (38.0 %) | 20 824 B (31.8 %) |
 | `custom_min` (previous: `Len` 1..32, 2026-10-20) | 99 492 B (38.0 %) | 20 824 B (31.8 %) |
 | `custom_min` (previous: Clock page TRn = physical jack, 2026-10-20) | 99 492 B (38.0 %) | 20 824 B (31.8 %) |

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 // Copyright (C) 2026 Ralf Traunsteiner
-// The real upstream ClockSetup applet (applets/ClockSetup.h, unmodified) on the
+// The real upstream ClockSetup applet (applets/ClockSetup.h, with our CUSTOM_BUILD
+// edits: shared multiplier list, docs/UPSTREAM.md) on the
 // host, plus the minimal hardware stand-ins its Controller() touches:
 //   OC::DigitalInputs  (OC_digital_inputs.cpp: pin ISRs + Scan, TR1 sync input)
 //   OC::ui._Poke()     (OC_ui.cpp: screensaver wake-up, no-op here)
@@ -8,6 +9,10 @@
 // APP_HEMISPHERE.h does (View() overlay, encoder / encoder-push routing).
 // HS::clock_m itself is defined in HemisphereApplet.cpp (already compiled).
 // See docs/HOST_SIM.md "Internal clock (ClockSetup)".
+// Same define as env custom_min; only this unit needs it (ClockSetup edits).
+#ifndef CUSTOM_BUILD
+#define CUSTOM_BUILD
+#endif
 #include "HemisphereApplet.h"
 #include "OC_digital_inputs.h"
 #include "OC_ui.h"
