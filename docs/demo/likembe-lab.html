@@ -183,12 +183,12 @@ function syncVoiceUI(v){
 
 // ---------------- snapshots (what the module display shows at a pulse) ----------------
 function snapshot(V, t, ev, gateEnd){
-  const c = V.core, B = c.pulses_per_bar, head = c.RhythmHead();
-  const events = []; for (let i = 0; i < B; ++i) events.push({note: !c.RestAt(i), accent: i === head});   // rhythm layer
+  const c = V.core, B = c.pulses_per_bar, dens = c.EffectiveDensity();
+  const events = []; for (let i = 0; i < B; ++i) { const e = c.EventAt(i); events.push({note: e.note, accent: e.accent}); }
   const thumbs = [0, 1].map(th => {
     const T = c.thumb[th];
     return {n: T.n, phase: T.phase, cur: c.CurrentElement(th),
-      deg: T.e.slice(0, T.n).map(x => x.degree)};
+      rest: T.e.slice(0, T.n).map((x, j) => E.Core.Rests(j, x, dens)), deg: T.e.slice(0, T.n).map(x => x.degree)};
   });
   return {t, B, pulse_idx: c.pulse_idx, events, thumbs, cycle_bars: c.cycle_bars, cycle_bar_idx: c.cycle_bar_idx,
     theme: c.ThemeDiffers(), key_lo: c.key_lo, key_hi: c.key_hi,
@@ -210,6 +210,7 @@ function line(fb, x0, y0, x1, y1){
 }
 function rect(fb, x, y, w, h){ for (let j = 0; j < h; ++j) for (let i = 0; i < w; ++i) px(fb, x + i, y + j); }
 function frame(fb, x, y, w, h){ line(fb, x, y, x + w - 1, y); line(fb, x, y + h - 1, x + w - 1, y + h - 1); line(fb, x, y, x, y + h - 1); line(fb, x + w - 1, y, x + w - 1, y + h - 1); }
+function dotted(fb, x, y, s){ for (let i = 0; i < s; i += 2) { px(fb, x + i, y); px(fb, x + i, y + s - 1); px(fb, x, y + i); px(fb, x + s - 1, y + i); } }
 
 function render(V, now){
   const s = V.view, fb = makeFb(); if (!s) return;
@@ -246,7 +247,7 @@ function render(V, now){
   // thumbs
   [0, 1].forEach(th => {
     const y = 52 + th * 6, T = s.thumbs[th];
-    for (let j = 0; j < T.n; ++j) { const x = 5 + j * 7; if (j === T.cur) rect(fb, x, y, 5, 5); else frame(fb, x, y, 5, 5); }
+    for (let j = 0; j < T.n; ++j) { const x = 5 + j * 7; if (j === T.cur) rect(fb, x, y, 5, 5); else if (T.rest[j]) dotted(fb, x, y, 5); else frame(fb, x, y, 5, 5); }
     line(fb, 0, y, 0, y + 4);
     if (th) { px(fb, 1, y); px(fb, 2, y + 1); px(fb, 1, y + 2); px(fb, 2, y + 3); px(fb, 2, y + 4); } else line(fb, 1, y + 4, 2, y + 4);
   });
@@ -257,11 +258,9 @@ function render(V, now){
   for (let i = 0; i < W * H; ++i) { const o = i * 4, b = fb[i]; img.data[o] = b ? on[0] : 0; img.data[o + 1] = b ? on[1] : 0; img.data[o + 2] = b ? on[2] : 0; img.data[o + 3] = 255; }
   V.ctx.putImageData(img, 0, 0);
   // text
-  const fig = T => T.deg.map((d, j) => (j === T.cur ? '[' : ' ') + (j === 0 ? 'X' : 'x') + (j === T.cur ? ']' : ' ')).join('');
-  const rhy = s.events.map(e => e.accent ? 'X' : (e.note ? 'x' : '.')).join('');
+  const fig = T => T.rest.map((r, j) => (j === T.cur ? '[' : ' ') + (r ? '.' : (j === 0 ? 'X' : 'x')) + (j === T.cur ? ']' : ' ')).join('');
   const L = s.thumbs[0], R = s.thumbs[1];
   V.text.textContent =
-    `bar ${rhy}\n` +
     `L ${fig(L)}  n ${L.n}  phase ${L.phase}  deg ${L.deg.join(' ')}\n` +
     `R ${fig(R)}  n ${R.n}  phase ${R.phase}  deg ${R.deg.join(' ')}\n` +
     `cycle ${s.cycle_bar_idx}/${s.cycle_bars}  seed ${s.seed}  roll ${s.pass ? `${s.bar_in_passage}/${s.pass}` : `Off (${s.bar_in_passage})`}` +
@@ -511,8 +510,6 @@ const PER = [   // [label, C++ name, getter/setter path, min, max, step, kind]
   ['Return to theme % (× Var)', 'kReturnToThemePct', ['ret'], 0, 100],
   ['Loop-length change % at new passage', 'kLoopChangePct', ['loopChange'], 0, 100],
   ['Octave headroom (degrees)', 'kOctaveHeadroom', ['headroom'], 0, 10],
-  ['Rest bias: last bar position', 'kRestBiasLast', ['restBiasLast'], 0, 255],
-  ['Rest bias: other positions', 'kRestBiasOther', ['restBiasOther'], 0, 255],
 ];
 const GLOB = [
   ['Gate accent (V) → velocity', 'kGateAccentUnits', 'accentV', 0, 6, .1],
@@ -578,8 +575,6 @@ function exportConstants(){
   emit('uint8_t kOctaveHeadroom', '', p => lab.parts[p].headroom);
   emit('uint8_t kReturnToThemePct', '', p => lab.parts[p].ret);
   emit('uint8_t kLoopChangePct', '', p => lab.parts[p].loopChange);
-  emit('uint8_t kRestBiasLast', '', p => lab.parts[p].restBiasLast);
-  emit('uint8_t kRestBiasOther', '', p => lab.parts[p].restBiasOther);
   const units = v => Number.isInteger(v) ? `${v} * 1536` : String(Math.round(v * UNITS_PER_VOLT));
   out.push(`constexpr int kGateAccentUnits = ${units(lab.accentV)};    // ${FMT.volt(lab.accentV)} on accented notes`);
   out.push(`constexpr int kGateNormalUnits = ${units(lab.normalV)};    // ${FMT.volt(lab.normalV)} on other notes`);

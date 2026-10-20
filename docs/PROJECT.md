@@ -84,11 +84,6 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   edge of `frame.gate_high`), ClockSetup no longer affects Src/Roll/Rst TRn; `Rst` = Off/TR1-4
   (default Off, `Int` removed; clock start always restarts via upstream auto_reset).
   `custom_min` 99,492 B flash / 20,824 B RAM (+16 B / 0 B).
-  2026-10-20 (host + sim-verified, parity OK, not hardware): **rhythm layer** -- rests are drawn
-  per bar position (`rhythm[32]`), so `Len` defines the feel (Len 5 = a 5-pulse rhythm repeating
-  every bar); thumbs carry pitches only and stay polymetric. Bar head always plays + accented;
-  `kRestBiasLast` (40) / `kRestBiasOther` (0). Step row shows the rhythm, L/R rows pitches only.
-  Pack layout unchanged. `custom_min` 99,428 B flash / 20,888 B RAM (−64 B / +64 B).
 - Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 16 combinations incl. Len 2/7/12/16/24/32).
 
 ### Open decisions
@@ -116,7 +111,6 @@ Hello hardware check (Phase 1 remainder) can be done with the same flash.
 | 2026-10-10 | License: GPLv3 (GPL-3.0-or-later) for the whole repo, `LICENSE` at root | Combined work is GPLv3 anyway (4 GPLv3 upstream files); matches NitroTron3; repo may be published on GitHub. Details `docs/UPSTREAM.md` |
 | 2026-10-19 | A setting change is audible immediately; no waiting for the next bar/step unless the module doc states otherwise | Turning a knob must give instant feedback; deferred changes feel broken. Likembe: Len (was Grid)/Part/Seed and TR2 re-roll now immediate |
 | 2026-10-19 | No master clock rework; use upstream clock + trigger map | Existing per-channel mult/div and in-applet division cover the needs; keeps `firmware/` edits at 2 files |
-| 2026-10-20 | Likembe: rhythm per bar position, pitches per thumb; Len = feel | Rest draws live in a per-bar-position rhythm layer (head always plays, last position biased lighter); thumb loops hold degrees only and stay polymetric. Details `docs/modules/likembe.md` § Engine |
 | 2026-10-20 | TRn in applet clock settings = physical jack, not ClockSetup-routed | `Src`/`Roll`/`Rst TRn` read rising edges of `frame.gate_high[n-1]`; `Int` is the only routed source; `Rst Int` dropped (clock start restarts anyway) |
 | 2026-10-20 | Clock page model: applets step once per pulse; `Src Int` = upstream routing (`Clock(0)`), `Src TRn` = `frame.clocked[n-1]` + pulse counter only (TRn superseded by the physical-jack row above); Roll/Rst trigger inputs per applet; applet-drawn sub-page with `Back` row | No tempo logic in applets; one place (ClockSetup) owns tempo/multipliers. Details `docs/CLOCK.md` |
 | 2026-10-20 | Real `ClockSetup`/`HS::clock_m` compiled into the host sim | `Src Int` / `Rst Int` / external sync become host-testable without stubbing clock behaviour |

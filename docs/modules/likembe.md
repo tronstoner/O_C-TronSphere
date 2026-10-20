@@ -27,7 +27,7 @@ this module.
 | TR2 | Re-roll (Clock page `Roll`, default = this hemisphere's 2nd input): new seed + new passage, applied **immediately** (pulse position kept, phases restart at 0, passage counter restarts). `Rst` may use any TR as restart input |
 | CV1 | Density modulation, bipolar: ±3 V (`HEMISPHERE_3V_CV`) = ±35 percent points (`kDensityCvRange`), added to Density, effective value clamped to 0..100 %; read every tick (one multiply/divide by constant) |
 | CV2 | Unassigned (open question) |
-| Out A | Velocity gate per note: 5 V on accented notes (`kGateAccentUnits`, bar head or element 0 of a thumb), 3 V otherwise (`kGateNormalUnits`); length = 50 % (`kGateLengthPct`) of the measured engine-step interval (between engine steps, i.e. `Div` input pulses with Src TRn; last interval, clamped to 10 s `kMaxPulseTicks`; 125 ms `kDefaultPulseTicks` until two steps are seen; the interval across a `Reset()` is not measured, the next gate uses the last one); a new note re-asserts the level immediately; rests start no gate |
+| Out A | Velocity gate per note: 5 V on accented notes (`kGateAccentUnits`, element 0 of a thumb), 3 V otherwise (`kGateNormalUnits`); length = 50 % (`kGateLengthPct`) of the measured engine-step interval (between engine steps, i.e. `Div` input pulses with Src TRn; last interval, clamped to 10 s `kMaxPulseTicks`; 125 ms `kDefaultPulseTicks` until two steps are seen; the interval across a `Reset()` is not measured, the next gate uses the last one); a new note re-asserts the level immediately; rests start no gate |
 | Out B | Pitch CV, 1 V/oct, 0 V = C2 (`kMidiAtZeroUnits`); held through rests |
 
 Physical numbering shifts by two in the right-hand slot (TR3/TR4, CV3/CV4, Out C/D).
@@ -79,30 +79,7 @@ Roll and Rst on the same input both fire (re-roll first, then restart). Clock st
 restarts the sequence (upstream auto_reset calls `Reset()` on every applet, `docs/CLOCK.md`
 1.2); `Rst` adds a trigger input for restarts.
 
-## Engine: rhythm layer vs pitch layer (decision 2026-10-20)
-
-`Len` defines the rhythmic feel; the thumb pitch loops stay polymetric.
-
-- **Rhythm layer** (`LikembeCore::rhythm[kLenMax]`, one rest draw 0..255 per bar position,
-  all 32 filled at generation so a Len change needs no new draw). Head = position `offset`
-  of the part (`RhythmHead()`; positions before it are silent offset pulses): always plays and
-  is accented (bar accent). Every other position i rests iff
-  `min(255, rhythm[i] + bias) * 100 >= density * 256` (`RestAt`); bias = `kRestBiasLast`
-  (default 40/255, lighter bar end) on the last position, `kRestBiasOther` (default 0)
-  elsewhere. The saturation at 255 keeps density 100 rest-free. Density/CV1 is the live
-  threshold. Since the draws are per bar position, the play/rest pattern repeats every bar.
-- **Pitch layer** (per thumb, `LikembeElement` = degree only): thumb L plays even positions
-  after the offset, R odd; the loop index advances per stroke slot (a rest mutes the slot, it
-  does not hold the loop), phases advance Len/2 strokes at the bar line.
-- `ev.accent` = bar head **or** loop element 0 (secondary accent); `ev.note = !RestAt(i)`.
-- Draw order (`rng_part`, also in the lab port): thumb L degrees, thumb R degrees, then
-  `rhythm[1..31]` ascending (`Next() >> 24` each); `rhythm[0] = 0`, no draw.
-- Mutations: rest (`kMutRest`) toggles one rhythm position after the head (rest → draw 0, play
-  → draw 255; the thumb pick draw is still consumed). Key, octave, loop length touch pitches
-  only. The passage theme stores the rhythm too; return-to-theme restores it; `~` also shows a
-  changed rhythm.
-
-At 0 % density only the bar head plays.
+Element 0 of each thumb never rests, so at 0 % density each thumb plays only its first element, once per pass through its loop.
 
 Unused/fixed (constants): Tuning (pentatonic only, `kTuningCount`), return to theme
 `kReturnToThemePct`, loop change `kLoopChangePct`, energy build `kEnergyBuildPct` (0),
@@ -197,14 +174,14 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
   next unscheduled pulse.
 - **Display:** a 4x canvas of the module display below the parameter line (tines, step row,
   running light, beat ticks, bar-cycle squares, status glyphs, L/R loop rows), drawn by a port of
-  `Likembe::View`, plus a `bar` line (rhythm: `X` head, `x` plays, `.` rest) and a line per thumb (`X` element 0, `x` element, `[ ]` next element,
+  `Likembe::View`, plus a text line per thumb (`X` accent, `x` note, `.` rest, `[ ]` next element,
   degrees, phase, cycle, seed, roll counter, `~theme`, `+lab` = lab constants pending).
 - **Sound:** tine synth, amp and room from the Congotronics demo. Velocity = Out A gate level
   / 5 V (accent 5 V = 1.0, normal 3 V = 0.6); note sustain = gate length.
 - **Reference only (not in the firmware):** bass drum patterns and clave/bell/beat from the
   demo; they run with the internal clock on their own 4-beat bar (Ref grid 16 or 12 steps), independent of the voices (Beat = every 4 steps).
 - **Lab / constants:** firmware constants with their C++ names, per part: `kStepWeight`
-  (per-part table in the core), `kMutWeight`, `kRestBiasLast`, `kRestBiasOther`, `kReturnToThemePct`, `kLoopChangePct`,
+  (per-part table in the core), `kMutWeight`, `kReturnToThemePct`, `kLoopChangePct`,
   `kOctaveHeadroom`; global: `kThumbLStartMiddle`; global and live:
   `kGateAccentUnits`, `kGateNormalUnits` (as volts), `kGateLengthPct`. Engine constants apply at
   the next bar line (immediately when nothing is clocking). **Export constants** prints a snippet in
@@ -221,7 +198,7 @@ default in `labDefaults()` (`likembe_engine.js`) to the same values, `task host:
 
 `kUnitsPerSemitone`, `kUnitsPerOctave`, `kMidiAtZeroUnits`, `kMaxPitchUnits`, `kTunings`,
 `kTuningCount`, `kLenMin`, `kLenMax`, `kDefaultLen`, `kMinLoop`, `kMaxLoop`, `kParts`, `kStepDelta`,
-`kStepWeight`, `kThumbLStartMiddle`, `kMutWeight`, `kRestBiasLast`, `kRestBiasOther`, `kOctaveHeadroom`, `kReturnToThemePct`, `kLoopChangePct`,
+`kStepWeight`, `kThumbLStartMiddle`, `kMutWeight`, `kOctaveHeadroom`, `kReturnToThemePct`, `kLoopChangePct`,
 `kEnergyBuildPct`, `kDensityMin` (0), `kDensityMax`, `kOctaveMin`, `kOctaveMax`, `kDefaultOctave`, `kDensityCvRange`, `kVariationMax`, `kPassageBars`,
 `kDefaultPassageIdx`, `kDefaultRoot`, `kDefaultSeed`,
 `kPartStreamOffset`, `kPassageStreamOffset`, `kSeedMix`, `kSeedNonZero`, `kGateAccentUnits`,
@@ -242,12 +219,12 @@ default in `labDefaults()` (`likembe_engine.js`) to the same values, `task host:
 | 14 | `Name value` | selected parameter; underline cursor (blinks), inverted in edit mode. Clock row: `Clock` + `>` at x 39, cursor under `>` |
 | 24 | Bridge | 1 px line across the tines |
 | 25–36 | Tines | one tine per key of the part (key_lo .. key_hi + octave headroom, max 15), 4 px column pitch, hanging from the bridge. Mapping follows the core's thumb split by absolute degree parity: even degree (thumb L) on the left from x 29 outward, odd degree (thumb R) on the right from x 33 outward, 4 px pitch, no shared centre tine; column within a side = (d − first same-parity degree ≥ key_lo) / 2, so each side's lowest degree is nearest the centre. Length 12 px in the centre, −1 px per column outward (min 6). Struck tine (Out A gate high): 3 px wide bar; accent additionally a 5×3 block at the tip. After the gate ends, the last struck tine keeps a 3 px foot under its tip until the next note |
-| 38–43 | Step row | rhythm layer, this bar's positions (`RestAt`, `RhythmHead`), 4 px cells for Len ≤ 16, 2 px cells above (Len 32 = 64 px): tall bar = bar head (bar accent), short bar = plays, dot = rest or offset pulse |
+| 38–43 | Step row | this bar's pulses (`EventAt`), 4 px cells for Len ≤ 16, 2 px cells above (Len 32 = 64 px): tall bar = accented note (element 0 of a thumb), short bar = note, dot = rest or offset pulse |
 | 44–45 | Running light | 2 px bar (cell width) under the pulse just played |
 | 46 | Beat ticks | 1 px tick at the first pulse of each beat (every 4 pulses, `kBeatPulses`, for any Len); downbeat 2 px wide |
 | 48–50 | Bar-cycle squares | one 3×3 square per bar of the realignment cycle N (4 px pitch, from x 0), current bar filled, others hollow; if N × 4 > 50: 1 px-wide markers (width 50/N) with the current one filled. Never reaches x 50 |
 | 48–50, x 58 | Status | 3 px pixel glyphs: `~` (x 58) = figures differ from the passage theme |
-| 52–56 | `L` + n cells | left thumb loop: 3×5 pixel label at x 0, 5×5 cells from x 5 at 7 px pitch (n = 2..8, ends x 58): filled = element played next, frame = other elements (pitches only; rests are shown in the step row) |
+| 52–56 | `L` + n cells | left thumb loop: 3×5 pixel label at x 0, 5×5 cells from x 5 at 7 px pitch (n = 2..8, ends x 58): filled = element played next, solid frame = note, dotted frame (checkerboard, corners lit) = rest at current density |
 | 58–62 | `R` + n cells | right thumb, same; different widths = different loop lengths, the filled cell moves at half the pulse rate and starts at a different cell each bar when the loop does not fit |
 
 **Clock page** replaces the whole view while open: five rows at y 14, 24, 34, 44, 54

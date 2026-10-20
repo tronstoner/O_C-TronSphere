@@ -55,12 +55,13 @@ struct LikembeEvent {
   bool note;            // false = rest (glue keeps the previous pitch)
   uint8_t degree;       // scale degree of the element (0 on offset pulses)
   int16_t pitch_units;  // O_C pitch CV, 0 = C2, clamped 0..kMaxPitchUnits
-  bool accent;          // bar head (rhythm) or first element of the thumb's figure
+  bool accent;          // first element of the thumb's figure
   uint8_t thumb;        // 0 = L, 1 = R
 };
 
 struct LikembeElement {
-  int8_t degree;        // pitch only; rests live in the rhythm layer (LikembeCore::rhythm)
+  int8_t degree;
+  uint8_t draw;         // stored rest draw 0..255: rests iff j>0 && draw*100 >= density*256
 };
 
 struct LikembeThumb {
@@ -78,11 +79,6 @@ struct LikembeCore {
   uint8_t bar_in_passage = 0; // bars completed in the current passage (saturates 255)
   LikembeThumb thumb[2];      // current figures (0 = L, 1 = R)
   LikembeThumb theme[2];      // figures as generated at passage start
-  // Rhythm layer: one rest draw 0..255 per bar position (all kLenMax filled, so
-  // a Len change needs none). Position RhythmHead() always plays (bar accent);
-  // others rest iff min(255, draw + bias) * 100 >= density * 256 (RestAt).
-  uint8_t rhythm[likembe::kLenMax] = {};
-  uint8_t theme_rhythm[likembe::kLenMax] = {};
   uint32_t rng_part = 1, rng_passage = 1;
   int16_t base_midi = 45;     // MIDI of degree 0
   uint8_t key_lo = 0, key_hi = 8; // part degree range
@@ -143,23 +139,9 @@ struct LikembeCore {
     const LikembeElement& el = t.e[idx];
     ev.degree = (uint8_t)el.degree;
     ev.pitch_units = PitchUnits(el.degree);
-    ev.accent = i == RhythmHead() || idx == 0;
-    ev.note = !RestAt(i);
+    ev.accent = idx == 0;
+    ev.note = !Rests(idx, el, EffectiveDensity());
     return ev;
-  }
-
-  // Rhythm layer. Head = first played position of the bar (the part offset);
-  // positions before it are offset pulses (silent).
-  uint8_t RhythmHead() const { return Profile().offset; }
-  bool RestAt(uint8_t i) const { return RestAt(i, EffectiveDensity()); }
-  bool RestAt(uint8_t i, uint8_t density) const {
-    uint8_t h = RhythmHead();
-    if (i < h) return true;
-    if (i == h) return false;
-    uint32_t bias = i + 1 >= pulses_per_bar ? likembe::kRestBiasLast : likembe::kRestBiasOther;
-    uint32_t v = rhythm[i] + bias;
-    if (v > 255u) v = 255u;
-    return v * 100u >= (uint32_t)density * 256u;
   }
 
   uint8_t ElementIndex(uint8_t th, uint8_t stroke) const {
@@ -204,11 +186,7 @@ struct LikembeCore {
     }
   }
 
-  bool ThemeDiffers() const {
-    if (!SameFigures(thumb, theme)) return true;
-    for (uint8_t i = 0; i < likembe::kLenMax; ++i) if (rhythm[i] != theme_rhythm[i]) return true;
-    return false;
-  }
+  bool ThemeDiffers() const { return !SameFigures(thumb, theme); }
 
   // Persistence (settings only). Bit layout, LSB first (bits 48..63 are left
   // to the glue: Likembe.h packs its clock page there, custom/core/likembe_clock.h):
@@ -256,6 +234,10 @@ struct LikembeCore {
     if (u < 0) u = 0;
     if (u > likembe::kMaxPitchUnits) u = likembe::kMaxPitchUnits;
     return (int16_t)u;
+  }
+
+  static bool Rests(uint8_t idx, const LikembeElement& el, uint8_t density) {
+    return idx > 0 && (uint32_t)el.draw * 100u >= (uint32_t)density * 256u;
   }
 
   // ---------------- internals ----------------
@@ -340,25 +322,17 @@ struct LikembeCore {
     for (uint8_t j = 0; j < n; ++j) {
       if (j) k = ClampI(k + likembe::kStepDelta[PickW(rng_part, likembe::kStepWeight[active_part], 5)], 0, c - 1);
       t.e[j].degree = keys[k];
+      t.e[j].draw = j ? (uint8_t)(Next(rng_part) >> 24) : 0;
       if (keys[k] != t.e[0].degree) all_equal = false;
     }
     if (n > 1 && all_equal) t.e[n - 1].degree = keys[ClampI(k + 1, 0, c - 1)];
-    for (uint8_t j = n; j < likembe::kMaxLoop; ++j) t.e[j] = {0};
-  }
-
-  // Draw order: thumb L degrees, thumb R degrees, then rhythm[1..kLenMax-1]
-  // (one Next(rng_part) >> 24 each, ascending); rhythm[0] = 0 (no draw).
-  void GenRhythm() {
-    rhythm[0] = 0;
-    for (uint8_t i = 1; i < likembe::kLenMax; ++i) rhythm[i] = (uint8_t)(Next(rng_part) >> 24);
+    for (uint8_t j = n; j < likembe::kMaxLoop; ++j) t.e[j] = {0, 0};
   }
 
   void GenPart() {
     GenThumb(0, thumb[0].n);
     GenThumb(1, thumb[1].n);
-    GenRhythm();
     theme[0] = thumb[0]; theme[1] = thumb[1];
-    for (uint8_t i = 0; i < likembe::kLenMax; ++i) theme_rhythm[i] = rhythm[i];
     bar_in_passage = 0;
     SyncCycle(true);
   }
@@ -419,7 +393,7 @@ struct LikembeCore {
   static bool SameThumb(const LikembeThumb& a, const LikembeThumb& b) {
     if (a.n != b.n) return false;
     for (uint8_t j = 0; j < a.n; ++j)
-      if (a.e[j].degree != b.e[j].degree) return false;
+      if (a.e[j].degree != b.e[j].degree || a.e[j].draw != b.e[j].draw) return false;
     return true;
   }
   static bool SameFigures(const LikembeThumb* a, const LikembeThumb* b) {
@@ -441,11 +415,11 @@ struct LikembeCore {
         t.e[j].degree = keys[ni];
         return;
       }
-      case kMutRest: {   // rhythm layer: toggle a bar position after the head (thumb draw unused)
-        uint8_t h = RhythmHead();
-        if (h + 1 >= pulses_per_bar) return;
-        uint8_t i = (uint8_t)(h + 1 + Below(rng_part, pulses_per_bar - 1 - h));
-        rhythm[i] = RestAt(i) ? 0 : 255;
+      case kMutRest: {
+        if (t.n < 2) return;
+        uint8_t j = (uint8_t)(1 + Below(rng_part, t.n - 1));
+        bool resting = Rests(j, t.e[j], EffectiveDensity());
+        t.e[j].draw = resting ? 0 : 255;
         return;
       }
       case kMutOctave: {
@@ -470,10 +444,10 @@ struct LikembeCore {
         while (t.n < np) {
           int i = KeyIndex(keys, c, t.e[t.n - 1].degree);
           int ni = ClampI(i + ((Next(rng_part) & 0x80000000u) ? 1 : -1), 0, c - 1);
-          t.e[t.n].degree = keys[ni];
+          t.e[t.n].degree = keys[ni]; t.e[t.n].draw = 0;
           ++t.n;
         }
-        for (uint8_t m = np; m < kMaxLoop; ++m) t.e[m] = {0};
+        for (uint8_t m = np; m < kMaxLoop; ++m) t.e[m] = {0, 0};
         t.n = np; t.phase = (uint8_t)(t.phase % np);
         return;
       }
@@ -485,7 +459,6 @@ struct LikembeCore {
     if (Chance(rng_part, likembe::kReturnToThemePct * rate) && ThemeDiffers()) {
       uint8_t pl = thumb[0].phase, pr = thumb[1].phase;
       thumb[0] = theme[0]; thumb[1] = theme[1];
-      for (uint8_t i = 0; i < likembe::kLenMax; ++i) rhythm[i] = theme_rhythm[i];
       thumb[0].phase = (uint8_t)(pl % thumb[0].n);
       thumb[1].phase = (uint8_t)(pr % thumb[1].n);
     }

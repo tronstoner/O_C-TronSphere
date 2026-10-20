@@ -41,7 +41,7 @@ const C = {
 function labDefaults() {
   const stepW = [[30, 70, 12, 8, 8], [20, 70, 12, 5, 10], [30, 70, 12, 8, 8], [30, 70, 12, 8, 8]];
   const part = p => ({stepW: stepW[p].slice(), mutW: [30, 20, 6, 5],
-    ret: 30, loopChange: 40, headroom: 2, restBiasLast: 40, restBiasOther: 0});
+    ret: 30, loopChange: 40, headroom: 2});
   return {parts: [part(0), part(1), part(2), part(3)], lStartMiddle: true, accentV: 5, normalV: 3, gatePct: 50};
 }
 const cloneLab = l => JSON.parse(JSON.stringify(l));
@@ -87,8 +87,8 @@ function clampParams(p) {
   p.seed = p.seed & 0xFFFF;
   return p;
 }
-const newThumb = () => ({n: 2, phase: 0, e: Array.from({length: 8}, () => ({degree: 0}))});
-const copyThumb = t => ({n: t.n, phase: t.phase, e: t.e.map(x => ({degree: x.degree}))});
+const newThumb = () => ({n: 2, phase: 0, e: Array.from({length: 8}, () => ({degree: 0, draw: 0}))});
+const copyThumb = t => ({n: t.n, phase: t.phase, e: t.e.map(x => ({degree: x.degree, draw: x.draw}))});
 
 class Core {
   constructor(lab) {
@@ -98,7 +98,6 @@ class Core {
     this.density_mod = 0;
     this.pulses_per_bar = 16; this.pulse_idx = 0; this.bar_in_passage = 0;
     this.thumb = [newThumb(), newThumb()]; this.theme = [newThumb(), newThumb()];
-    this.rhythm = new Array(C.kLenMax).fill(0); this.theme_rhythm = new Array(C.kLenMax).fill(0);
     this.rng_part = {s: 1}; this.rng_passage = {s: 1};
     this.base_midi = 45; this.key_lo = 0; this.key_hi = 8; this.active_part = 0;
     this.cycle_bars = 1; this.cycle_bar_idx = 1; this.cycle_n = [0, 0];
@@ -136,19 +135,9 @@ class Core {
     const el = t.e[idx];
     ev.degree = el.degree;
     ev.pitch_units = this.PitchUnits(el.degree);
-    ev.accent = i === this.RhythmHead() || idx === 0;
-    ev.note = !this.RestAt(i);
+    ev.accent = idx === 0;
+    ev.note = !Core.Rests(idx, el, this.EffectiveDensity());
     return ev;
-  }
-  RhythmHead() { return this.Profile().offset; }
-  RestAt(i, density) {
-    if (density === undefined) density = this.EffectiveDensity();
-    const h = this.RhythmHead();
-    if (i < h) return true;
-    if (i === h) return false;
-    const bias = i + 1 >= this.pulses_per_bar ? this.L().restBiasLast : this.L().restBiasOther;
-    const v = Math.min(255, this.rhythm[i] + bias);
-    return v * 100 >= density * 256;
   }
   ElementIndex(th, stroke) { return (this.thumb[th].phase + stroke) % this.thumb[th].n; }
   CurrentElement(th) {
@@ -178,11 +167,7 @@ class Core {
       this.cycle_bar_idx = 1;
     }
   }
-  ThemeDiffers() {
-    if (!Core.SameFigures(this.thumb, this.theme)) return true;
-    for (let i = 0; i < C.kLenMax; ++i) if (this.rhythm[i] !== this.theme_rhythm[i]) return true;
-    return false;
-  }
+  ThemeDiffers() { return !Core.SameFigures(this.thumb, this.theme); }
 
   Profile() { return C.kParts[this.active_part]; }
   TuningRef() { return C.kTunings[0]; }
@@ -194,6 +179,7 @@ class Core {
     return clampI((midi - C.kMidiAtZeroUnits) * C.kUnitsPerSemitone, 0, C.kMaxPitchUnits);
   }
   PitchMidi(degree) { return C.kMidiAtZeroUnits + this.PitchUnits(degree) / C.kUnitsPerSemitone; }
+  static Rests(idx, el, density) { return idx > 0 && el.draw * 100 >= density * 256; }
 
   UpdatePitchBase() {
     const pp = this.Profile();
@@ -230,21 +216,16 @@ class Core {
     for (let j = 0; j < n; ++j) {
       if (j) k = clampI(k + C.kStepDelta[pickW(this.rng_part, L.stepW)], 0, c - 1);
       t.e[j].degree = keys[k];
+      t.e[j].draw = j ? (next(this.rng_part) >>> 24) : 0;
       if (keys[k] !== t.e[0].degree) allEqual = false;
     }
     if (n > 1 && allEqual) t.e[n - 1].degree = keys[clampI(k + 1, 0, c - 1)];
-    for (let j = n; j < C.kMaxLoop; ++j) t.e[j] = {degree: 0};
-  }
-  GenRhythm() {
-    this.rhythm[0] = 0;
-    for (let i = 1; i < C.kLenMax; ++i) this.rhythm[i] = next(this.rng_part) >>> 24;
+    for (let j = n; j < C.kMaxLoop; ++j) t.e[j] = {degree: 0, draw: 0};
   }
   GenPart() {
     this.GenThumb(0, this.thumb[0].n);
     this.GenThumb(1, this.thumb[1].n);
-    this.GenRhythm();
     this.theme = [copyThumb(this.thumb[0]), copyThumb(this.thumb[1])];
-    this.theme_rhythm = this.rhythm.slice();
     this.bar_in_passage = 0;
     this.SyncCycle(true);
   }
@@ -293,7 +274,7 @@ class Core {
   }
   static SameThumb(a, b) {
     if (a.n !== b.n) return false;
-    for (let j = 0; j < a.n; ++j) if (a.e[j].degree !== b.e[j].degree) return false;
+    for (let j = 0; j < a.n; ++j) if (a.e[j].degree !== b.e[j].degree || a.e[j].draw !== b.e[j].draw) return false;
     return true;
   }
   static SameFigures(a, b) { return Core.SameThumb(a[0], b[0]) && Core.SameThumb(a[1], b[1]); }
@@ -314,10 +295,10 @@ class Core {
         return;
       }
       case 1: {   // rest
-        const h = this.RhythmHead();
-        if (h + 1 >= this.pulses_per_bar) return;
-        const i = h + 1 + below(r, this.pulses_per_bar - 1 - h);
-        this.rhythm[i] = this.RestAt(i) ? 0 : 255;
+        if (t.n < 2) return;
+        const j = 1 + below(r, t.n - 1);
+        const resting = Core.Rests(j, t.e[j], this.EffectiveDensity());
+        t.e[j].draw = resting ? 0 : 255;
         return;
       }
       case 2: {   // octave
@@ -341,10 +322,10 @@ class Core {
         while (t.n < np) {
           const i = keys.indexOf(t.e[t.n - 1].degree);
           const ni = clampI(i + (hiBit(r) ? 1 : -1), 0, c - 1);
-          t.e[t.n].degree = keys[ni];
+          t.e[t.n].degree = keys[ni]; t.e[t.n].draw = 0;
           ++t.n;
         }
-        for (let m = np; m < C.kMaxLoop; ++m) t.e[m] = {degree: 0};
+        for (let m = np; m < C.kMaxLoop; ++m) t.e[m] = {degree: 0, draw: 0};
         t.n = np; t.phase = t.phase % np;
         return;
       }
@@ -355,7 +336,6 @@ class Core {
     if (chance(this.rng_part, this.L().ret * rate) && this.ThemeDiffers()) {
       const pl = this.thumb[0].phase, pr = this.thumb[1].phase;
       this.thumb = [copyThumb(this.theme[0]), copyThumb(this.theme[1])];
-      this.rhythm = this.theme_rhythm.slice();
       this.thumb[0].phase = pl % this.thumb[0].n;
       this.thumb[1].phase = pr % this.thumb[1].n;
     }

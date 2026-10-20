@@ -167,7 +167,7 @@ private:
   static constexpr int kThumbPitch = 6;
   static constexpr int kThumbCell = 7;
   static constexpr int kThumbX = 5;      // after the 3x5 L/R label; 5x5 cells, 2 px gap, 8 cells end at x 58
-  static constexpr int kCellS = 5;
+  static constexpr int kCellS = 5;       // odd size: checkerboard dotted frame closes at the corners
 
   custom::LikembeCore core;
   custom::LikembeClock clk = custom::LikembeClock::Defaults(false);
@@ -295,16 +295,17 @@ private:
     }
   }
 
-  // Step row = rhythm layer: this bar's positions (tall = bar head, short =
-  // plays, dot = rest / offset); the pulse just played is marked by a bar below (running light).
+  // Step row: this bar's pulses (tall = accent, short = note, dot = rest /
+  // offset); the pulse just played is marked by a bar below (running light).
   // Cells 4 px up to 16 pulses, 2 px above (32 x 2 = 64). Beat ticks every
   // kBeatPulses pulses.
   void DrawSteps() {
     const int b = core.pulses_per_bar, w = b <= 16 ? 4 : 2;
     for (int i = 0; i < b; ++i) {
+      custom::LikembeEvent e = core.EventAt((uint8_t)i);
       const int x = i * w;
-      if (!core.RestAt((uint8_t)i)) {
-        const int h = i == core.RhythmHead() ? kStepH : kStepH - 3;
+      if (e.note) {
+        const int h = e.accent ? kStepH : kStepH - 3;
         gfxRect(x, kStepY + kStepH - h, w - 1, h);
       } else {
         gfxPixel(x + (w - 1) / 2, kStepY + kStepH - 1);
@@ -334,12 +335,23 @@ private:
     }
   }
 
+  // Dotted frame: perimeter pixels on even (dx + dy); odd size -> corners lit, pattern closes.
+  void DottedFrame(int x, int y, int sz) {
+    for (int i = 0; i < sz; i += 2) {
+      gfxPixel(x + i, y); gfxPixel(x + i, y + sz - 1);
+      gfxPixel(x, y + i); gfxPixel(x + sz - 1, y + i);
+    }
+  }
+
   void DrawThumb(uint8_t th, int y) {
     const custom::LikembeThumb& t = core.thumb[th];
     const uint8_t cur = core.CurrentElement(th);
+    const uint8_t dens = core.EffectiveDensity();
     for (uint8_t j = 0; j < t.n; ++j) {
       const int x = kThumbX + j * kThumbCell;
+      const bool rest = custom::LikembeCore::Rests(j, t.e[j], dens);
       if (j == cur) gfxRect(x, y, kCellS, kCellS);
+      else if (rest) DottedFrame(x, y, kCellS);
       else gfxFrame(x, y, kCellS, kCellS);
     }
     // 3x5 pixel label (the 8 px font would collide with the squares row)
