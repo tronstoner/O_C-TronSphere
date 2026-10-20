@@ -97,6 +97,14 @@ A user message that contains new input while an implementation is running is dis
 not a change of the running task; stop and go back to phase 2 if the input affects it.
 Exception to the "go" rule: trivial numeric or obvious choices inside an approved task.
 
+### Reporting
+- Plain technical English. No jargon without a one-line definition the first time (e.g. say
+  "Phazerville's Hemisphere app" instead of "upstream" when it matters which code is meant).
+- A finding is reported as four lines: **What** (observed fact, with file reference),
+  **Issue** (why it may matter), **When** (the conditions under which it occurs),
+  **Meaning** (consequence and the decision it asks of the user, if any).
+- No metaphors, no filler, no restating the request. Numbers in a table or on their own line.
+
 ### Decision-making
 - **Ask before coding a fix or change.** Describe the problem, list 2–3 concrete options,
   wait for the user's choice. Exception: trivial numeric or obvious choices — just pick.
