@@ -49,9 +49,10 @@ th{font-weight:600;color:var(--muted)} td input{width:4.2rem} code{font:12px ui-
     <label>Master <input id="vol" type="range" min="0" max="1" step="0.01" value="0.7"></label>
     <span class="muted">Reference only (not in the firmware):</span>
     <label>Bass drum <select id="kick"><option value="off">Off</option><option value="four" selected>Four</option><option value="pickup">Pickup</option><option value="half">Half</option><option value="three">Three</option></select></label>
+    <label>Ref grid <select id="refgrid"><option value="16" selected>16</option><option value="12">12</option></select></label>
     <label>Clave <select id="clave"><option value="off">Off</option><option value="clave" selected>Clave</option><option value="bell">Bell</option><option value="beat">Beat</option></select></label>
   </div>
-  <div class="muted" style="margin-top:4px">Reference layers follow voice 1's pulses (patterns for Len 12 / 16; Beat = every 4 pulses).</div>
+  <div class="muted" style="margin-top:4px">Reference layers run on their own 4-beat bar (16 or 12 steps), independent of the voices (Beat = every 4 steps).</div>
 </section>
 
 <div class="voices" id="voices"></div>
@@ -329,14 +330,23 @@ const bpm = () => Math.max(20, Math.min(300, +$('#bpm').value || 82));
 // Each voice is clocked like TR1 from a 16th-note clock (x4 per beat); the engine
 // pulses on the first of every Div clocks (glue DivFire()). Gate = gatePct of the
 // engine-pulse interval (Div clocks).
+let refNext = 0, refStep = 0;
+function tickRef(){
+  const B = +$('#refgrid').value, step = 60 / bpm() / (B / 4);
+  while (refNext < ac.currentTime + .12) {
+    kickAt(refNext, refStep, B); claveAt(refNext, refStep, B);
+    refNext += step; refStep = (refStep + 1) % B;
+  }
+}
 function tick(){
+  tickRef();
   voices.forEach((V, v) => {
     while (V.nextTime < ac.currentTime + .12) {
       const c = V.core, B = c.pulses_per_bar, clk = 60 / bpm() / 4, t = V.nextTime;
       V.nextTime += clk;
       if (!(V.divLeft === 0 || V.divLeft > c.params.div)) { --V.divLeft; continue; }
       V.divLeft = c.params.div - 1;
-      const dur = clk * c.params.div, p = c.pulse_idx;
+      const dur = clk * c.params.div;
       const ev = c.Pulse();
       let gateEnd = V.pendGateEnd || 0;
       if (ev.note) {
@@ -345,7 +355,6 @@ function tick(){
         if (!V.mute) pluck(V, t, K.kMidiAtZeroUnits + ev.pitch_units / K.kUnitsPerSemitone, velOf(ev.accent), len);
       }
       V.pendGateEnd = gateEnd;
-      if (v === 0) { kickAt(t, p, B); claveAt(t, p, B); }
       V.snaps.push(snapshot(V, t, ev, gateEnd));
     }
   });
@@ -357,6 +366,7 @@ async function togglePlay(){
   $('#play').textContent = playing ? 'Stop' : 'Play'; $('#play').classList.toggle('on', playing);
   if (playing) {
     const t0 = ac.currentTime + .06;
+    refNext = t0; refStep = 0;
     voices.forEach(V => { V.nextTime = t0; V.divLeft = 0; V.snaps = []; V.pendGateEnd = 0; V.gateEnd = 0; });
     tick(); timer = setInterval(tick, 25);
   } else {

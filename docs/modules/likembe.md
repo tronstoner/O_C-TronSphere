@@ -150,7 +150,7 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
 - **Sound:** tine synth, amp and room from the Congotronics demo. Velocity = Out A gate level
   / 5 V (accent 5 V = 1.0, normal 3 V = 0.6); note sustain = gate length.
 - **Reference only (not in the firmware):** bass drum patterns and clave/bell/beat from the
-  demo; they follow voice 1's engine pulses (patterns exist for Len 12 / 16 only; Beat = every 4 pulses).
+  demo; they run on their own 4-beat bar (Ref grid 16 or 12 steps), independent of the voices' Len/Div (Beat = every 4 steps).
 - **Lab / constants:** firmware constants with their C++ names, per part: `kStepWeight`
   (per-part table in the core), `kMutWeight`, `kReturnToThemePct`, `kLoopChangePct`,
   `kOctaveHeadroom`; global: `kThumbLStartMiddle`; global and live:
