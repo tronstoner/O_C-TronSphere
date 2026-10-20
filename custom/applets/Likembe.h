@@ -4,12 +4,14 @@
 // instance (id 201). Logic: custom/core/likembe_core.h. This header is glue
 // only: I/O, cursor/encoder, display, persistence. See docs/modules/likembe.md.
 //
-// Pulse clock (Clk: Auto = TR1 of this hemisphere via Clock(0), or physical-slot
-// TR1..TR4 via HS::frame.clocked[]) divided by Div (one engine pulse every Div
-// input clocks), TR2 re-roll immediately,
+// Clock page (main row "Clock >"; settings in custom/core/likembe_clock.h, rules
+// in docs/CLOCK.md): Src Int = Clock(0) as upstream routes it, one step per
+// pulse; Src TRn = HS::frame.clocked[n-1] divided by Div (counter only). Roll
+// TRn = immediate re-roll, Rst = restart at bar start (Int = ClockSetup start).
 // CV1 density mod (+-3 V = +-kDensityCvRange %), Out A velocity gate per note, Out B pitch.
 #pragma once
 #include "custom/core/likembe_core.h"
+#include "custom/core/likembe_clock.h"
 
 class Likembe : public HemisphereApplet {
 public:
@@ -17,20 +19,30 @@ public:
 
   void Start() {
     core.Init(custom::LikembeParams::Defaults(custom::likembe::kPartBass));
+    clk = custom::LikembeClock::Defaults(Right());
     cursor = 0;
+    page = false;
     pitch = core.EventAt(0).pitch_units;
   }
 
-  void Reset() { core.Reset(); div_left = 0; }   // next input clock fires a pulse
+  // Bar start; the next input pulse steps. The interval across a stop/reset is
+  // not measured: the next gate uses the last measured step interval.
+  void Reset() { core.Reset(); divider.Reset(); have_pulse = false; }
 
   void Controller() {
     using namespace custom::likembe;
     if (since_pulse < kMaxPulseTicks) ++since_pulse;
     if (gate_ticks && --gate_ticks == 0) Out(0, 0);
     // CV1 -> density offset (integer, constant divisor).
-    core.SetDensityMod((int8_t)(In(0) * custom::likembe::kDensityCvRange / HEMISPHERE_3V_CV));
-    if (Clock(1)) core.Reroll();
-    if (PulseClock() && DivFire()) {
+    core.SetDensityMod((int8_t)(In(0) * kDensityCvRange / HEMISPHERE_3V_CV));
+    if (clk.roll_in != kRollOff && HS::frame.clocked[clk.roll_in - kRollTr1]) core.Reroll();
+    const bool running = HS::clock_m.IsRunning();
+    bool rst = false;
+    if (clk.rst_in == kRstInt) rst = running && !was_running;
+    else if (clk.rst_in >= kRstTr1) rst = HS::frame.clocked[clk.rst_in - kRstTr1];
+    was_running = running;
+    if (rst) Reset();
+    if (StepPulse()) {
       if (have_pulse) pulse_ticks = since_pulse;   // already clamped to kMaxPulseTicks
       have_pulse = true;
       since_pulse = 0;
@@ -47,6 +59,7 @@ public:
   }
 
   void View() {
+    if (page) { DrawPage(); return; }
     DrawParam();
     DrawTines();
     DrawSteps();
@@ -56,48 +69,83 @@ public:
     DrawStatus();
   }
 
+  void OnButtonPress() {
+    if (page) {
+      if (!EditMode()) {
+        if (page_cursor == kPgBack) { LeavePage(); return; }
+        if (page_cursor == kPgDiv && clk.src == custom::likembe::kSrcInt) return;   // "-": not editable
+      }
+      CursorToggle();
+      return;
+    }
+    if (!EditMode() && cursor == kCurClock) { page = true; page_cursor = kPgSrc; ResetCursor(); return; }
+    CursorToggle();
+  }
+
+  // Other hemisphere's button while editing: cancel the edit; on the page also back to the list.
+  void AuxButton() {
+    CancelEdit();
+    if (page) LeavePage();
+  }
+
   void OnEncoderMove(int direction) {
-    if (!EditMode()) { MoveCursor(cursor, direction, kCursorLast); return; }
     using namespace custom::likembe;
+    if (page) {
+      if (!EditMode()) { MoveCursor(page_cursor, direction, kPgLast); return; }
+      switch (page_cursor) {
+        case kPgSrc:  clk.src = (uint8_t)constrain(clk.src + direction, 0, kSrcCount - 1); divider.Reset(); break;
+        case kPgDiv:  if (clk.src != kSrcInt) clk.div = (uint8_t)constrain(clk.div + direction, kClockDivMin, kClockDivMax); break;
+        case kPgRoll: clk.roll_in = (uint8_t)constrain(clk.roll_in + direction, 0, kRollCount - 1); break;
+        case kPgRst:  clk.rst_in = (uint8_t)constrain(clk.rst_in + direction, 0, kRstCount - 1); break;
+      }
+      return;
+    }
+    if (!EditMode()) { MoveCursor(cursor, direction, kCursorLast); return; }
     custom::LikembeParams p = core.params;   // core owns the seed after re-rolls
     switch (cursor) {
       case kCurDensity: p.density_pct = (uint8_t)constrain(p.density_pct + direction * kDensityStep, kDensityMin, kDensityMax); break;
-      case kCurClk:     p.clock_src = (uint8_t)constrain(p.clock_src + direction, 0, kClockSrcCount - 1); break;
+      case kCurVar:     p.variation_pct = (uint8_t)constrain(p.variation_pct + direction * kVarStep, 0, kVariationMax); break;
       case kCurPart:    p.part = (uint8_t)constrain(p.part + direction, 0, kPartCount - 1); break;
+      case kCurLen:     p.len = (uint8_t)constrain(p.len + direction, kLenMin, kLenMax); break;
       case kCurRoot:    p.root = (uint8_t)((p.root + 12 + direction) % 12); break;
       case kCurOct:     p.octave = (int8_t)constrain(p.octave + direction, kOctaveMin, kOctaveMax); break;
-      case kCurLen:     p.len = (uint8_t)constrain(p.len + direction, kLenMin, kLenMax); break;
-      case kCurDiv:     p.div = (uint8_t)constrain(p.div + direction, kDivMin, kDivMax); break;
-      case kCurVar:     p.variation_pct = (uint8_t)constrain(p.variation_pct + direction * kVarStep, 0, kVariationMax); break;
       case kCurPassage: p.passage_idx = (uint8_t)constrain(p.passage_idx + direction, 0, kPassageCount - 1); break;
       case kCurSeed:    core.RerollNow(); return;   // deliberate edit: new seed immediately
+      case kCurClock:   return;                     // opens the page on press
     }
     core.SetParams(p);
   }
 
-  uint64_t OnDataRequest() { return core.Pack(); }
+  uint64_t OnDataRequest() { return core.Pack() | clk.Pack(); }
   void OnDataReceive(uint64_t data) {
     core.Init(custom::LikembeCore::UnpackParams(data));
+    clk = custom::LikembeClock::Unpack(data, Right());
+    divider.Reset();
     pitch = core.EventAt(0).pitch_units;
   }
 
 protected:
   void SetHelp() {
     //                    "-------" <-- Label size guide
-    help[HELP_DIGITAL1] = "Pulse";
+    help[HELP_DIGITAL1] = "Clock";
     help[HELP_DIGITAL2] = "Reroll";
     help[HELP_CV1]      = "Density";
     help[HELP_CV2]      = "";
     help[HELP_OUT1]     = "Gate acc";
     help[HELP_OUT2]     = "Pitch";
-    help[HELP_EXTRA1]   = "Len pulses/bar, Div";
+    help[HELP_EXTRA1]   = "Clock>: Src Div Roll";
     help[HELP_EXTRA2]   = "Seed enc: new pattern";
     //                    "---------------------" <-- Extra text size guide
   }
 
 private:
-  enum Cursor { kCurDensity, kCurVar, kCurPart, kCurRoot, kCurOct, kCurLen, kCurDiv, kCurPassage, kCurSeed, kCurClk };
-  static constexpr int kCursorLast = kCurClk;
+  enum Cursor { kCurDensity, kCurVar, kCurPart, kCurLen, kCurRoot, kCurOct, kCurPassage, kCurSeed, kCurClock };
+  static constexpr int kCursorLast = kCurClock;
+  enum PageCursor { kPgSrc, kPgDiv, kPgRoll, kPgRst, kPgBack };
+  static constexpr int kPgLast = kPgBack;
+  static constexpr int kPageRowY0 = 14;  // Clock page: 5 rows, 10 px pitch (14..61)
+  static constexpr int kPageRowH = 10;
+  static constexpr int kPageValX = 34;   // value column; cursor 29 px to x 62
   static constexpr int kDensityStep = 5;
   static constexpr int kVarStep = 5;
   // Layout (y = top of element)
@@ -121,42 +169,75 @@ private:
   static constexpr int kCellS = 5;       // odd size: checkerboard dotted frame closes at the corners
 
   custom::LikembeCore core;
+  custom::LikembeClock clk = custom::LikembeClock::Defaults(false);
+  custom::PulseDivider divider;
   int cursor = 0;
+  bool page = false;          // Clock page shown
+  int page_cursor = 0;
+  bool was_running = false;   // HS::clock_m.IsRunning() last tick (Rst Int edge)
   int pitch = 0;
   uint32_t since_pulse = 0;   // ticks since last pulse clock, clamped
   uint32_t pulse_ticks = custom::likembe::kDefaultPulseTicks;   // measured interval
   uint32_t gate_ticks = 0;    // Out A countdown; 0 = low
   bool have_pulse = false;
-  uint8_t div_left = 0;       // input clocks until the next engine pulse; 0 = fire on next
   uint8_t last_degree = 0;    // display only: last struck degree / accent
   bool last_accent = false;
   bool have_note = false;
 
-  // Pulse clock per Clk: Auto = Clock(0) (this hemisphere's first trigger via
-  // the upstream trigger map / internal clock); TRn = frame.clocked[n-1].
-  bool PulseClock() {
-    const uint8_t src = core.params.clock_src;
-    if (src == custom::likembe::kClockAuto) return Clock(0);
-    return HS::frame.clocked[src - custom::likembe::kClockTr1];
+  bool Right() const { return io_offset != 0; }
+  void LeavePage() { page = false; cursor = kCurClock; ResetCursor(); }
+
+  // Engine step: Src Int = Clock(0) (upstream routing), one step per pulse;
+  // Src TRn = frame.clocked[n-1], one step every Div pulses.
+  bool StepPulse() {
+    using namespace custom::likembe;
+    if (clk.src == kSrcInt) return Clock(0);
+    return HS::frame.clocked[clk.src - kSrcTr1] && divider.Tick(clk.div);
   }
 
-  // Clock division: fire on the first of every Div input clocks (decrement
-  // only). A smaller Div takes effect at the next input clock.
-  bool DivFire() {
-    bool fire = div_left == 0 || div_left > core.params.div;
-    if (fire) div_left = core.params.div;
-    --div_left;
-    return fire;
+  // Formatting for the Clock page values (one place).
+  static const char* InName(uint8_t tr) {   // tr 1..4
+    static const char* const kTr[] = {"TR1", "TR2", "TR3", "TR4"};
+    return kTr[(tr - 1) & 3];
+  }
+  void PrintPageValue(int row) {
+    using namespace custom::likembe;
+    switch (row) {
+      case kPgSrc:  gfxPrint(clk.src == kSrcInt ? "Int" : InName(clk.src)); break;
+      case kPgDiv:  if (clk.src == kSrcInt) gfxPrint("-"); else { gfxPrint("/"); gfxPrint(clk.div); } break;
+      case kPgRoll: gfxPrint(clk.roll_in == kRollOff ? "Off" : InName(clk.roll_in)); break;
+      case kPgRst:
+        if (clk.rst_in == kRstOff) gfxPrint("Off");
+        else if (clk.rst_in == kRstInt) gfxPrint("Int");
+        else gfxPrint(InName(clk.rst_in - kRstTr1 + 1));
+        break;
+    }
+  }
+
+  void DrawPage() {
+    static const char* const kRows[] = {"Src", "Div", "Roll", "Rst", "Back"};
+    for (int r = 0; r <= kPgLast; ++r) {
+      const int y = kPageRowY0 + r * kPageRowH;
+      gfxPrint(1, y, kRows[r]);
+      if (r != kPgBack) { gfxPrint(kPageValX, y, ""); PrintPageValue(r); }
+    }
+    const int y = kPageRowY0 + page_cursor * kPageRowH;
+    if (page_cursor == kPgBack) gfxCursor(1, y + 8, 25);
+    else gfxCursor(kPageValX - 1, y + 8, 63 - kPageValX);
   }
 
   void DrawParam() {
-    static const char* const kNames[] = {"Dens", "Var", "Part", "Root", "Oct", "Len", "Div", "Roll", "Seed", "Clk"};
-    static const char* const kClks[] = {"Auto", "TR1", "TR2", "TR3", "TR4"};
+    static const char* const kNames[] = {"Dens", "Var", "Part", "Len", "Root", "Oct", "Roll", "Seed", "Clock"};
     static const char* const kParts[] = {"Bass", "Lead", "MiSol", "Solo"};
     static const char* const kNotes[] = {"C", "C#", "D", "Eb", "E", "F", "F#", "G", "Ab", "A", "Bb", "B"};
     const custom::LikembeParams& p = core.params;
     gfxPrint(1, kTextY, kNames[cursor]);
     const int vx = 30;
+    if (cursor == kCurClock) {   // "Clock >": press opens the page
+      gfxPrint(vx + 9, kTextY, ">");
+      gfxCursor(vx, kTextY + 8, 33);
+      return;
+    }
     gfxPrint(vx, kTextY, "");
     switch (cursor) {
       case kCurDensity: gfxPrint(core.EffectiveDensity()); gfxPrint("%"); break;
@@ -164,14 +245,12 @@ private:
       case kCurRoot:    gfxPrint(kNotes[p.root]); break;
       case kCurOct:     if (p.octave > 0) gfxPrint("+"); gfxPrint(p.octave); break;
       case kCurLen:     gfxPrint(p.len); break;
-      case kCurDiv:     gfxPrint("/"); gfxPrint(p.div); break;
       case kCurVar:     gfxPrint(p.variation_pct); gfxPrint("%"); break;
       case kCurPassage:
         if (custom::likembe::kPassageBars[p.passage_idx] == 0) gfxPrint("Off");
         else { gfxPrint(custom::likembe::kPassageBars[p.passage_idx]); gfxPrint(":"); gfxPrint(core.bar_in_passage); }
         break;
       case kCurSeed:    gfxPrint((int)p.seed); break;
-      case kCurClk:     gfxPrint(kClks[p.clock_src]); break;
     }
     gfxCursor(vx, kTextY + 8, 33);
   }

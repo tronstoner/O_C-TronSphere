@@ -18,7 +18,7 @@ Reference: `docs/research/Congotronics line generator.html` (pattern logic porte
 ## API (as implemented, namespace `custom`)
 
 ```cpp
-struct LikembeParams { uint8_t density_pct, part, root; int8_t octave; uint8_t len, div, variation_pct, passage_idx; uint16_t seed; uint8_t clock_src;
+struct LikembeParams { uint8_t density_pct, part, root; int8_t octave; uint8_t len, variation_pct, passage_idx; uint16_t seed;
   static LikembeParams Defaults(uint8_t part); void Clamp(); };
 struct LikembeEvent { bool note; uint8_t degree; int16_t pitch_units; bool accent; uint8_t thumb; };
 struct LikembeCore {
@@ -53,7 +53,8 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
   consumes no randomness; it is the same decision as the spec's `random > ρ` at generation.
 - `active_part` holds the part the figures belong to (updated on regeneration, i.e. immediately on a part change).
 - Len/part/seed changes regenerate from the seed immediately (decided 2026-10-19); `pulse_idx` is kept (wrapped to the new Len) and `bar_in_passage` is kept, so the clock grid never jumps; phases restart at 0. Root is immediate.
-- Pulse clock source `Clk` (`clock_src`, bits 51–53 since the Len/Div re-layout): `Auto` = `Clock(0)`, `TR1..TR4` = `HS::frame.clocked[n-1]` (done 2026-10-19).
+- ~~Pulse clock source `Clk`~~ replaced 2026-10-20 by the Clock page (below); `div` and
+  `clock_src` removed from `LikembeParams`.
 - Integer RNG: two xorshift32 streams, part stream = seed + 7919·part, passage stream =
   seed + 31, seeded via multiply/xorshift mix with a non-zero fallback. Probabilities
   against 16-bit draws; weighted picks with integer weights (`kStepWeight`, `kMutWeight`).
@@ -123,10 +124,39 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 - Verified: host tests, parity, sim screenshots Len 12/16/24/32, sim Div 2 at 120:4 (engine
   pulse 250 ms, gate 125 ms). Lab Len/Div UI: script syntax-checked only, not run in a browser.
 
+## Clock page replaces Div and Clk (2026-10-20, user decision; done)
+
+- Main list Dens, Var, Part, Len, Root, Oct, Roll, Seed, `Clock >`; push on `Clock` opens an
+  applet-drawn page (own cursor) with Src (Int/TR1-4), Div (1-24, TRn only, `-` with Int),
+  Roll (re-roll input Off/TR1-4, default own 2nd input), Rst (Off/Int/TR1-4), Back.
+  `AuxButton` while editing a page row also returns. Rules: `docs/CLOCK.md`.
+- Glue-side settings `custom::LikembeClock` + `custom::PulseDivider` in
+  `custom/core/likembe_clock.h` (host-testable; core never sees them). Core pack re-laid out
+  to bits 0–47 (`kPackBits`), clock page at 48–61; no presets existed.
+- Glue order per tick: Roll input → Rst (Int = rising edge of `clock_m.IsRunning()`, or TRn)
+  → step (Src Int = `Clock(0)`; TRn = `frame.clocked[n-1]` && divider). `Reset()` also drops
+  the step-interval measurement (`have_pulse = false`): found by the `likembe_rst_int` sim
+  scenario, the first gate after a restart was 50 % of the stop gap and swallowed notes.
+- Finding: upstream auto_reset already calls `Reset()` on every applet on clock start, so
+  `Rst Int` equals upstream behaviour and `Rst Off` cannot prevent that restart.
+- Tests: `clock_pack_unpack`, `pulse_divider` (host); sim scenarios `likembe_src_int_x4`,
+  `likembe_src_tr1_div3`, `likembe_rst_int`, `likembe_ext_sync_tr1` (real ClockSetup in
+  the sim); lab: ClockSetup model, verified in headless Chrome (step counts for x4, steady
+  TR1 / Div 3, manual pulses, Rst Int restart) with a stubbed AudioContext.
+
+### Firmware translation (lab → glue)
+
+- The lab schedules 120 ms ahead in audio time and evaluates one IOFrame instant per event
+  time; the firmware polls every tick. Same order of Roll / Rst / step per instant.
+- The lab's internal clock is a grid model (`t0 + k·beat/m`); upstream `SyncTrig()` has
+  integer ticks, shuffle and external-sync nudging. Step order is identical, timing is not.
+- Stop in the lab processes one empty frame at once (so Rst Int sees the falling edge); the
+  firmware sees `IsRunning()` change on the next tick.
+
 ## Open questions for the user
 
 1. ~~Re-roll at next bar line vs immediate?~~ Decided 2026-10-19: immediate (all setting changes immediate).
-2. ~~Clock input choosable?~~ Done 2026-10-19: `Clk` = Auto / TR1..TR4.
+2. ~~Clock input choosable?~~ Done 2026-10-19 (`Clk`), replaced 2026-10-20 by the Clock page.
 3. CV2: variation-rate modulation, re-roll gate, or root transpose? (currently unassigned)
 7. Part change: reload the part's default Density/Var, or keep the user's values (current)?
 8. Seed edit: random new seed per turn (current) vs stepping the seed number?

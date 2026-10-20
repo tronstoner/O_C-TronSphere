@@ -18,11 +18,9 @@ struct LikembeParams {
   uint8_t root;           // pitch class 0..11 (lowest key)
   int8_t octave;          // octave offset kOctaveMin..kOctaveMax
   uint8_t len;            // pulses per bar kLenMin..kLenMax
-  uint8_t div;            // clock division kDivMin..kDivMax (glue only)
   uint8_t variation_pct;  // 0..100 = 0..1 mutations per bar
   uint8_t passage_idx;    // index into kPassageBars (0 = Off)
   uint16_t seed;
-  uint8_t clock_src;      // likembe::ClockSrc (glue only; Auto = Clock(0))
 
   static LikembeParams Defaults(uint8_t part = likembe::kPartBass) {
     using namespace likembe;
@@ -33,11 +31,9 @@ struct LikembeParams {
     p.root = kDefaultRoot;
     p.octave = kDefaultOctave;
     p.len = kDefaultLen;
-    p.div = kDefaultDiv;
     p.variation_pct = kParts[part].variation_pct;
     p.passage_idx = kDefaultPassageIdx;
     p.seed = kDefaultSeed;
-    p.clock_src = kClockAuto;
     return p;
   }
 
@@ -50,11 +46,8 @@ struct LikembeParams {
     if (octave > kOctaveMax) octave = kOctaveMax;
     if (len < kLenMin) len = kLenMin;
     if (len > kLenMax) len = kLenMax;
-    if (div < kDivMin) div = kDivMin;
-    if (div > kDivMax) div = kDivMax;
     if (variation_pct > kVariationMax) variation_pct = kVariationMax;
     if (passage_idx >= kPassageCount) passage_idx = kPassageCount - 1;
-    if (clock_src >= kClockSrcCount) clock_src = kClockAuto;
   }
 };
 
@@ -111,7 +104,6 @@ struct LikembeCore {
   // mapping immediate (figures are degrees). Len, part, seed: full
   // regeneration from the seed, immediately; the bar position (pulse_idx,
   // wrapped to the new Len) and bar_in_passage are kept, phases restart at 0.
-  // Div is not used by the core (the glue counts input clocks).
   void SetParams(const LikembeParams& p) {
     LikembeParams np = p; np.Clamp();
     bool regen = np.len != params.len || np.part != params.part || np.seed != params.seed;
@@ -196,23 +188,22 @@ struct LikembeCore {
 
   bool ThemeDiffers() const { return !SameFigures(thumb, theme); }
 
-  // Persistence (settings only). Bit layout, LSB first:
+  // Persistence (settings only). Bit layout, LSB first (bits 48..63 are left
+  // to the glue: Likembe.h packs its clock page there, custom/core/likembe_clock.h):
   //  0..6 density_pct (7)  7..8 part (2)  9..12 root (4)
-  // 13..17 len - kLenMin (5; 31 -> Len 33 clamps to 32)  18..20 div - kDivMin (3)
-  // 21..27 variation_pct (7)  28..31 passage_idx (4)  32..47 seed (16)
-  // 48..50 octave - kOctaveMin (3; 6, 7 clamp to +3)  51..53 clock_src (3; 5..7 -> Auto)
+  // 13..17 len - kLenMin (5; 31 -> Len 33 clamps to 32)  18..24 variation_pct (7)
+  // 25..28 passage_idx (4)  29..31 octave - kOctaveMin (3; 6, 7 clamp to +3)  32..47 seed (16)
+  static constexpr int kPackBits = 48;
   uint64_t Pack() const {
     uint64_t d = 0;
     d |= (uint64_t)(params.density_pct & 0x7F);
     d |= (uint64_t)(params.part & 0x3) << 7;
     d |= (uint64_t)(params.root & 0xF) << 9;
     d |= (uint64_t)((params.len - likembe::kLenMin) & 0x1F) << 13;
-    d |= (uint64_t)((params.div - likembe::kDivMin) & 0x7) << 18;
-    d |= (uint64_t)(params.variation_pct & 0x7F) << 21;
-    d |= (uint64_t)(params.passage_idx & 0xF) << 28;
+    d |= (uint64_t)(params.variation_pct & 0x7F) << 18;
+    d |= (uint64_t)(params.passage_idx & 0xF) << 25;
+    d |= (uint64_t)((params.octave - likembe::kOctaveMin) & 0x7) << 29;
     d |= (uint64_t)params.seed << 32;
-    d |= (uint64_t)((params.octave - likembe::kOctaveMin) & 0x7) << 48;
-    d |= (uint64_t)(params.clock_src & 0x7) << 51;
     return d;
   }
   static LikembeParams UnpackParams(uint64_t d) {
@@ -221,12 +212,10 @@ struct LikembeCore {
     p.part = (uint8_t)((d >> 7) & 0x3);
     p.root = (uint8_t)((d >> 9) & 0xF);
     p.len = (uint8_t)(((d >> 13) & 0x1F) + likembe::kLenMin);
-    p.div = (uint8_t)(((d >> 18) & 0x7) + likembe::kDivMin);
-    p.variation_pct = (uint8_t)((d >> 21) & 0x7F);
-    p.passage_idx = (uint8_t)((d >> 28) & 0xF);
+    p.variation_pct = (uint8_t)((d >> 18) & 0x7F);
+    p.passage_idx = (uint8_t)((d >> 25) & 0xF);
+    p.octave = (int8_t)(((d >> 29) & 0x7) + likembe::kOctaveMin);
     p.seed = (uint16_t)((d >> 32) & 0xFFFF);
-    p.octave = (int8_t)(((d >> 48) & 0x7) + likembe::kOctaveMin);
-    p.clock_src = (uint8_t)((d >> 51) & 0x7);
     p.Clamp();
     return p;
   }

@@ -31,9 +31,6 @@ constexpr uint8_t kTuningCount = 1;       // enabled tunings (MVP: pentatonic on
 // Len = pulses per bar (bar line, cycle, loop-fit rule, display step row).
 constexpr uint8_t kLenMin = 2, kLenMax = 32;
 constexpr uint8_t kDefaultLen = 16;
-// Div = clock division: one engine pulse every Div input clocks (counted in the glue).
-constexpr uint8_t kDivMin = 1, kDivMax = 8;
-constexpr uint8_t kDefaultDiv = 1;
 constexpr uint8_t kMinLoop = 2;
 constexpr uint8_t kMaxLoop = 8;           // strokes per thumb figure
 
@@ -99,9 +96,22 @@ constexpr uint8_t kPassageCount = sizeof(kPassageBars);
 constexpr uint8_t kDefaultPassageIdx = 0;     // Off
 constexpr uint8_t kDefaultRoot = 4;           // E
 constexpr uint16_t kDefaultSeed = 1;
-// Pulse clock source (Clk). Auto = the hemisphere's Clock(0) (upstream trigger
-// map / internal clock); TRn = HS::frame.clocked[n-1] directly.
-enum ClockSrc : uint8_t { kClockAuto = 0, kClockTr1, kClockTr2, kClockTr3, kClockTr4, kClockSrcCount };
+
+// ---- Clock page (glue settings, custom/core/likembe_clock.h; docs/CLOCK.md) ----
+// Src: Int = the hemisphere's Clock(0) as upstream routes it (internal clock
+// multiplier when running, else trigger map); TRn = HS::frame.clocked[n-1].
+enum ClockSrc : uint8_t { kSrcInt = 0, kSrcTr1, kSrcTr2, kSrcTr3, kSrcTr4, kSrcCount };
+// Div: with Src TRn, one engine step every Div input pulses (decrement counter).
+constexpr uint8_t kClockDivMin = 1, kClockDivMax = 24;
+constexpr uint8_t kDefaultClockDiv = 1;
+// Roll: trigger input for an immediate re-roll. Default = the hemisphere's own
+// 2nd input (TR2 left, TR4 right).
+enum RollIn : uint8_t { kRollOff = 0, kRollTr1, kRollTr2, kRollTr3, kRollTr4, kRollCount };
+constexpr uint8_t kDefaultRollLeft = kRollTr2, kDefaultRollRight = kRollTr4;
+// Rst: restart at bar start (figures kept). Int = ClockSetup start (rising edge
+// of HS::clock_m.IsRunning()).
+enum RstIn : uint8_t { kRstOff = 0, kRstInt, kRstTr1, kRstTr2, kRstTr3, kRstTr4, kRstCount };
+constexpr uint8_t kDefaultRst = kRstInt;
 
 // ---- Out A velocity gate (glue) ----
 constexpr int kGateAccentUnits = 5 * 1536;    // 5 V on accented notes

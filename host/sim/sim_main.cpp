@@ -9,6 +9,7 @@
 #include <cstdlib>
 #include <cstring>
 #include <string>
+#include <vector>
 #include "sim_core.h"
 #include "oled_dump.h"
 
@@ -36,7 +37,21 @@ static void Usage() {
       "  --encoder N     N encoder detents (+/-)\n"
       "  --press         encoder button press (toggles edit mode)\n"
       "  --out DIR       output dir for sim.pbm / sim_x4.pgm (default .)\n"
-      "  --quiet         no ASCII frame dump");
+      "  --quiet         no ASCII frame dump\n"
+      "internal clock (real HS::clock_m + ClockSetup::Controller):\n"
+      "  --int-start     start now (clock_m.Start(); applets get Reset() via auto_reset)\n"
+      "  --int-arm       arm (paused): starts on the next TR1 pulse\n"
+      "  --int-stop      stop\n"
+      "  --int-bpm N     tempo in BPM\n"
+      "  --mult S:M      multiplier of input slot S (1..4 = left in1, in2, right in1, in2):\n"
+      "                  x1..x24, /2../32, off\n"
+      "  --ppqn N        external sync: TR1 pulses per beat (0..24)\n"
+      "checks (exit 1 on failure):\n"
+      "  --segment              start a new segment of recorded output rises\n"
+      "  --expect-rises K N     output K (0..3) rose from 0 N times (N or LO..HI) in this segment\n"
+      "  --expect-bpm N         internal clock tempo (N or LO..HI)\n"
+      "  --expect-same K A B N  first N rises of output K in segments A and B (0-based)\n"
+      "                         show the same values on all four outputs");
 }
 
 // Single formatter for everything this front end prints or logs.
@@ -54,15 +69,35 @@ std::string Volts(int32_t units) {
   return Num(v, kVoltDecimals);
 }
 char OutName(int ch) { return (char)('A' + ch); }
+// Clock multiplier like ClockSetup shows it: x4, /2, off.
+std::string Mult(int m) {
+  if (m == 0) return "off";
+  return m > 0 ? "x" + std::to_string(m) : "/" + std::to_string(1 - m);
+}
 }  // namespace fmt
+
+// One output rise (0 -> nonzero) and all four outputs at that tick.
+struct Rise { int ch; int32_t out[simcore::kChannels]; };
 
 struct Logger : simcore::OutListener {
   FILE *csv = nullptr;
   bool events = false;
+  std::vector<std::vector<Rise>> segments{1};
+  int32_t last[simcore::kChannels] = {};
   void Row(double t, int ch, int32_t v) {
     std::fprintf(csv, "%s,%d,%d,%s\n", fmt::Seconds(t).c_str(), ch, (int)v, fmt::Volts(v).c_str());
   }
-  void OnChange(double t, int ch, int32_t v) override { if (csv) Row(t, ch, v); }
+  void OnChange(double t, int ch, int32_t v) override {
+    if (csv) Row(t, ch, v);
+    if (last[ch] == 0 && v != 0) segments.back().push_back({ch, {}});
+    last[ch] = v;
+  }
+  // Snapshot outputs after the tick (OnChange runs per channel inside the tick).
+  void Settle() {
+    for (auto &r : segments.back())
+      if (r.out[0] == 0 && r.out[1] == 0 && r.out[2] == 0 && r.out[3] == 0)
+        for (int k = 0; k < simcore::kChannels; ++k) r.out[k] = simcore::Out(k);
+  }
   void OnTrigger(double t, int ch, simcore::TrigKind k) override {
     if (events)
       std::printf("event t=%s out=%c trig=%s\n", fmt::Seconds(t).c_str(), fmt::OutName(ch),
@@ -77,6 +112,30 @@ static int ParseTr(const char *s, const char *opt) {
 }
 
 static uint32_t ScriptTicks(double seconds) { return (uint32_t)(seconds * simcore::kTickHz + 0.5); }
+
+// "x4" -> 4, "/2" -> -1 (upstream: -1 = /2), "off" -> 0, else the raw number.
+static int ParseMult(const char *s) {
+  if (s[0] == 'x') return std::atoi(s + 1);
+  if (s[0] == '/') return 1 - std::atoi(s + 1);
+  if (std::strcmp(s, "off") == 0) return 0;
+  return std::atoi(s);
+}
+
+// "N" or "LO..HI" (inclusive).
+struct Range { long lo, hi; bool Has(long v) const { return v >= lo && v <= hi; } };
+static Range ParseRange(const char *s) {
+  const char *d = std::strstr(s, "..");
+  return d ? Range{std::atol(s), std::atol(d + 2)} : Range{std::atol(s), std::atol(s)};
+}
+static std::string Str(const Range &r) {
+  return r.lo == r.hi ? std::to_string(r.lo) : std::to_string(r.lo) + ".." + std::to_string(r.hi);
+}
+
+static int g_fail = 0;
+static void Check(bool ok, const std::string &what) {
+  std::printf("%s %s\n", ok ? "PASS" : "FAIL", what.c_str());
+  if (!ok) ++g_fail;
+}
 
 int main(int argc, char **argv) {
   std::string outdir = ".";
@@ -127,8 +186,54 @@ int main(int argc, char **argv) {
       if (i + 1 >= argc) { std::fprintf(stderr, "missing value for %s\n", a.c_str()); std::exit(2); }
       return argv[++i];
     };
-    if (a == "--seconds") simcore::Run(ScriptTicks(std::atof(next())));
-    else if (a == "--ticks") simcore::Run((uint32_t)std::atol(next()));
+    auto run = [&](uint32_t n) { for (uint32_t k = 0; k < n; ++k) { simcore::Tick(); log.Settle(); } };
+    if (a == "--seconds") run(ScriptTicks(std::atof(next())));
+    else if (a == "--ticks") run((uint32_t)std::atol(next()));
+    else if (a == "--int-start") simcore::IntStart(false);
+    else if (a == "--int-arm") simcore::IntStart(true);
+    else if (a == "--int-stop") simcore::IntStop();
+    else if (a == "--int-bpm") simcore::IntSetBpm(std::atoi(next()));
+    else if (a == "--ppqn") simcore::IntSetPpqn(std::atoi(next()));
+    else if (a == "--mult") {
+      const char *v = next();
+      const char *c = std::strchr(v, ':');
+      if (!c) { std::fprintf(stderr, "--mult S:M\n"); return 2; }
+      const int slot = ParseTr(v, "--mult");
+      simcore::IntSetMultiply(slot, ParseMult(c + 1));
+      std::printf("t=%s mult slot %d = %s\n", fmt::Seconds(simcore::Seconds()).c_str(), slot + 1,
+                  fmt::Mult(simcore::IntMultiply(slot)).c_str());
+    }
+    else if (a == "--segment") log.segments.emplace_back();
+    else if (a == "--expect-rises") {
+      const int k = std::atoi(next()) & 3;
+      const Range n = ParseRange(next());
+      int got = 0;
+      for (const auto &r : log.segments.back()) got += r.ch == k;
+      Check(n.Has(got), "segment " + std::to_string(log.segments.size() - 1) + " out" + std::to_string(k) +
+                          " rises: want " + Str(n) + " got " + std::to_string(got));
+    }
+    else if (a == "--expect-bpm") {
+      const Range n = ParseRange(next());
+      Check(n.Has(simcore::IntBpm()), "internal clock tempo: want " + Str(n) + " got " + std::to_string(simcore::IntBpm()) + " BPM");
+    }
+    else if (a == "--expect-same") {
+      const int k = std::atoi(next()) & 3, sa = std::atoi(next()), sb = std::atoi(next()), n = std::atoi(next());
+      auto pick = [&](int seg) {
+        std::vector<Rise> v;
+        if (seg >= 0 && seg < (int)log.segments.size())
+          for (const auto &r : log.segments[seg]) if (r.ch == k && (int)v.size() < n) v.push_back(r);
+        return v;
+      };
+      const auto va = pick(sa), vb = pick(sb);
+      bool ok = (int)va.size() == n && (int)vb.size() == n;
+      std::string detail;
+      for (int j = 0; ok && j < n; ++j)
+        for (int c = 0; c < simcore::kChannels; ++c)
+          if (va[j].out[c] != vb[j].out[c]) { ok = false; detail = " (rise " + std::to_string(j) + " out" + std::to_string(c) + ": " + std::to_string(va[j].out[c]) + " vs " + std::to_string(vb[j].out[c]) + ")"; }
+      Check(ok, "out" + std::to_string(k) + " first " + std::to_string(n) + " rises equal in segments " +
+                    std::to_string(sa) + " and " + std::to_string(sb) + detail +
+                    (ok ? "" : " [have " + std::to_string(va.size()) + ", " + std::to_string(vb.size()) + "]"));
+    }
     else if (a.rfind("--in", 0) == 0 && a.size() == 5) simcore::SetCv((a[4] - '0') & 3, std::atoi(next()));
     else if (a.rfind("--gate", 0) == 0 && a.size() == 7) simcore::SetGate((a[6] - '0') & 3, std::atoi(next()) != 0);
     else if (a == "--encoder") simcore::EncoderMove(side, std::atoi(next()));
@@ -148,8 +253,11 @@ int main(int argc, char **argv) {
   }
 
   const uint8_t *fb = simcore::Render();
-  std::printf("t=%.3fs ticks=%u edit=%d\n", simcore::Seconds(), (unsigned)simcore::Ticks(),
-              (int)simcore::EditMode(side));
+  std::printf("t=%.3fs ticks=%u edit=%d int=%s bpm=%d ppqn=%d mult=%s,%s,%s,%s\n", simcore::Seconds(),
+              (unsigned)simcore::Ticks(), (int)simcore::EditMode(side),
+              simcore::IntRunning() ? "running" : (simcore::IntArmed() ? "armed" : "stopped"), simcore::IntBpm(),
+              simcore::IntPpqn(), fmt::Mult(simcore::IntMultiply(0)).c_str(), fmt::Mult(simcore::IntMultiply(1)).c_str(),
+              fmt::Mult(simcore::IntMultiply(2)).c_str(), fmt::Mult(simcore::IntMultiply(3)).c_str());
   for (int ch = 0; ch < simcore::kChannels; ++ch) std::printf("out%d=%d ", ch, (int)simcore::Out(ch));
   std::printf("\n");
   std::string p = outdir + "/sim.pbm";
@@ -158,5 +266,5 @@ int main(int argc, char **argv) {
   std::printf("wrote %s\n", p.c_str());
   if (log.csv) { std::fclose(log.csv); std::printf("wrote %s\n", csv_path.c_str()); }
   if (!quiet) host::PrintAscii(fb);
-  return 0;
+  return g_fail ? 1 : 0;
 }

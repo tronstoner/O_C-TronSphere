@@ -39,20 +39,26 @@ th{font-weight:600;color:var(--muted)} td input{width:4.2rem} code{font:12px ui-
 <body>
 <div class="wrap">
 <h1>Likembe lab</h1>
-<div class="muted">Same pattern engine as <code>custom/core/likembe_core.h</code> (checked by <code>task host:parity</code>). Two voices = two applet instances on one clock.</div>
+<div class="muted">Same pattern engine as <code>custom/core/likembe_core.h</code> (checked by <code>task host:parity</code>). Two voices = two applet instances: Voice 1 = left hemisphere (inputs TR1, TR2), Voice 2 = right hemisphere (TR3, TR4).</div>
 
 <section>
+  <h2>Clock <span class="muted" style="font-weight:400">— model of the upstream ClockSetup (<code>docs/CLOCK.md</code>): internal clock with a multiplier per hemisphere input; stopped or <em>off</em> = trigger map (input n ← TRn)</span></h2>
   <div class="bar">
-    <button id="play">Play</button>
-    <label>Tempo <input id="bpm" type="number" min="20" max="300" step="1" value="82" style="width:4.5rem"> bpm</label>
+    <button id="play" title="ClockSetup Start/Stop (internal clock). Start also resets every applet (upstream auto_reset).">Start</button>
+    <label>BPM <input id="bpm" type="number" min="20" max="300" step="1" value="82" style="width:4.5rem"></label>
+    <label>Voice 1 (left in 1) <select id="mult0"></select></label>
+    <label>Voice 2 (right in 1) <select id="mult2"></select></label>
     <button id="restart" title="Init both voices from their parameters (like power-on / preset load)">Init</button>
     <label>Master <input id="vol" type="range" min="0" max="1" step="0.01" value="0.7"></label>
+  </div>
+  <div class="bar" style="margin-top:6px" id="trs"></div>
+  <div class="bar" style="margin-top:6px">
     <span class="muted">Reference only (not in the firmware):</span>
     <label>Bass drum <select id="kick"><option value="off">Off</option><option value="four" selected>Four</option><option value="pickup">Pickup</option><option value="half">Half</option><option value="three">Three</option></select></label>
     <label>Ref grid <select id="refgrid"><option value="16" selected>16</option><option value="12">12</option></select></label>
     <label>Clave <select id="clave"><option value="off">Off</option><option value="clave" selected>Clave</option><option value="bell">Bell</option><option value="beat">Beat</option></select></label>
   </div>
-  <div class="muted" style="margin-top:4px">Reference layers run on their own 4-beat bar (16 or 12 steps), independent of the voices (Beat = every 4 steps).</div>
+  <div class="muted" style="margin-top:4px">Reference layers run with the internal clock on their own 4-beat bar (16 or 12 steps), independent of the voices (Beat = every 4 steps). TR <em>steady</em> = 4 pulses per beat at the BPM (the ClockSetup input PPQN default), for testing Src TRn / Div.</div>
 </section>
 
 <div class="voices" id="voices"></div>
@@ -77,9 +83,18 @@ th{font-weight:600;color:var(--muted)} td input{width:4.2rem} code{font:12px ui-
 'use strict';
 const E = window.LikembeEngine, K = E.C, $ = s => document.querySelector(s);
 const NOTES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
+// Multiplier -> note value (one beat = 1/4).
+const NOTE_OF = {1: '1/4', 2: '1/8', 3: '1/8T', 4: '1/16', 6: '1/16T', 8: '1/32', 12: '1/32T', 16: '1/64', 24: '1/64T',
+  [-1]: '1/2', [-2]: '1/2.', [-3]: '1/1', [-5]: '1/1.', [-7]: '2/1', [-15]: '4/1', [-31]: '8/1'};
+const SRC_NAMES = ['Int', 'TR1', 'TR2', 'TR3', 'TR4'], ROLL_NAMES = ['Off', 'TR1', 'TR2', 'TR3', 'TR4'],
+  RST_NAMES = ['Off', 'Int', 'TR1', 'TR2', 'TR3', 'TR4'];
+const SLOT = [0, 2];   // voice -> io_offset: Clock(0) of the left / right hemisphere
 // One place for display formatting.
 const FMT = {
   pct: v => `${v}%`, oct: v => v > 0 ? `+${v}` : `${v}`, div: d => `/${d}`,
+  tr: n => `TR${n}`,
+  // ClockSetup multiplier: x1..x24, /2../32 (upstream value m < 0 means /(1 - m)), 0 = off.
+  mult: m => m === 0 ? 'off (trigger map)' : (m > 0 ? `x${m}` : `÷${1 - m}`) + (NOTE_OF[m] ? `  ${NOTE_OF[m]}` : ''),
   pass: i => K.kPassageBars[i] ? String(K.kPassageBars[i]) : 'Off',
   volt: v => `${Number(v).toFixed(1)} V`,
 };
@@ -91,7 +106,9 @@ const voices = [0, 1].map(v => {
   const core = new E.Core(lab);
   const p = E.defaults(v === 0 ? 0 : 1); p.seed = v === 0 ? 1 : 2;
   core.Init(p);
-  return {core, mute: false, nextTime: 0, snaps: [], view: null, gateEnd: 0, last: null, dumpBars: 32, divLeft: 0};
+  return {core, mute: false, snaps: [], view: null, gateEnd: 0, last: null, dumpBars: 32,
+    clk: E.clockDefaults(v === 1), divider: {left: 0}, wasRunning: false, havePulse: false, lastStepT: 0,
+    stepDur: K.kDefaultPulseTicks / K.kTickHz, pendGateEnd: 0};
 });
 
 function buildVoiceUI(v){
@@ -106,13 +123,17 @@ function buildVoiceUI(v){
       <span>Dens</span><input type="range" min="0" max="100" step="5" data-k="density_pct"><output data-o="density_pct"></output>
       <span>Var</span><input type="range" min="0" max="100" step="5" data-k="variation_pct"><output data-o="variation_pct"></output>
       <span>Part</span><select class="w2" data-k="part">${opt(K.kPartNames)}</select>
+      <span>Len</span><input class="w2" type="number" min="2" max="32" step="1" data-k="len" title="Pulses per bar (2..32)" style="width:4.5rem">
       <span>Root</span><select class="w2" data-k="root">${opt(NOTES)}</select>
       <span>Oct</span><select class="w2" data-k="octave">${opt([-2,-1,0,1,2,3], x => [x, FMT.oct(x)])}</select>
-      <span>Len</span><input class="w2" type="number" min="2" max="32" step="1" data-k="len" title="Pulses per bar (2..32)" style="width:4.5rem">
-      <span>Div</span><input class="w2" type="number" min="1" max="8" step="1" data-k="div" title="One engine pulse every Div 16th-note clocks (1..8)" style="width:4.5rem">
       <span>Roll</span><select class="w2" data-k="passage_idx">${opt(K.kPassageBars, (x, i) => [i, FMT.pass(i)])}</select>
       <span>Seed</span><input class="w2" type="number" min="0" max="65535" step="1" data-k="seed" title="New seed: regenerates immediately (SetParams)" style="width:6rem">
-      <span></span><span class="w2 bar" style="gap:4px"><button data-a="reroll" title="TR2 / Seed encoder: new seed + passage, immediately">re-roll (TR2)</button></span>
+      <span></span><span class="w2 bar" style="gap:4px"><button data-a="reroll" title="Roll input / Seed encoder: new seed + passage, immediately">re-roll</button></span>
+      <span class="muted" style="grid-column:1/4;margin-top:4px">Clock &gt; (page)</span>
+      <span>Src</span><select data-c="src">${opt(SRC_NAMES)}</select><output data-oc="src"></output>
+      <span>Div</span><input type="number" min="1" max="24" step="1" data-c="div" title="Src TRn: one step every Div pulses (1..24)" style="width:4.5rem"><output data-oc="div"></output>
+      <span>Roll</span><select data-c="roll_in" title="Re-roll trigger input">${opt(ROLL_NAMES)}</select><output data-oc="roll_in"></output>
+      <span>Rst</span><select data-c="rst_in" title="Restart at bar start: Int = ClockSetup start">${opt(RST_NAMES)}</select><output data-oc="rst_in"></output>
     </div>
   </div>
   <pre data-o="text"></pre>
@@ -129,12 +150,18 @@ function buildVoiceUI(v){
       let val = parseInt(inp.value, 10); if (Number.isNaN(val)) return;
       if (k === 'seed') val = Math.max(0, Math.min(65535, val));
       if (k === 'len') val = Math.max(K.kLenMin, Math.min(K.kLenMax, val));
-      if (k === 'div') val = Math.max(K.kDivMin, Math.min(K.kDivMax, val));
       p[k] = val;
       V.core.SetParams(p);
       syncVoiceUI(v); refreshIdle(v);
     });
   });
+  el.querySelectorAll('[data-c]').forEach(inp => inp.addEventListener('change', () => {
+    const k = inp.dataset.c; let val = parseInt(inp.value, 10); if (Number.isNaN(val)) return;
+    if (k === 'div') val = Math.max(K.kClockDivMin, Math.min(K.kClockDivMax, val));
+    V.clk[k] = val;
+    if (k === 'src') V.divider.left = 0;   // glue: changing Src re-arms the divider
+    syncVoiceUI(v);
+  }));
   el.querySelector('[data-a=reroll]').onclick = () => { V.core.Reroll(); syncVoiceUI(v); refreshIdle(v); };
   el.querySelector('[data-a=dump]').onclick = () => dumpVoice(v);
   syncVoiceUI(v);
@@ -147,6 +174,11 @@ function syncVoiceUI(v){
   });
   V.el.querySelector('[data-o=density_pct]').textContent = FMT.pct(p.density_pct);
   V.el.querySelector('[data-o=variation_pct]').textContent = FMT.pct(p.variation_pct);
+  const c = V.clk, divIn = V.el.querySelector('[data-c=div]');
+  V.el.querySelectorAll('[data-c]').forEach(inp => { if (document.activeElement !== inp) inp.value = String(c[inp.dataset.c]); });
+  divIn.disabled = c.src === K.kSrcInt;
+  if (divIn.disabled) { divIn.value = ''; divIn.placeholder = '-'; }   // like the module: "-", not editable
+  V.el.querySelector('[data-oc=div]').textContent = c.src === K.kSrcInt ? '-' : FMT.div(c.div);
 }
 
 // ---------------- snapshots (what the module display shows at a pulse) ----------------
@@ -163,9 +195,9 @@ function snapshot(V, t, ev, gateEnd){
     headroom: c.L().headroom, seed: c.params.seed, bar_in_passage: c.bar_in_passage, pass: K.kPassageBars[c.params.passage_idx],
     lab_pending: !!c.labPending, ev, gateEnd, havePulse: !!ev};
 }
-function refreshIdle(v){   // stopped: show the core as it is now
+function refreshIdle(v){   // nothing clocking: show the core as it is now
   const V = voices[v];
-  if (!playing) V.view = Object.assign(snapshot(V, 0, null, 0), {havePulse: !!V.last});
+  if (!active()) V.view = Object.assign(snapshot(V, 0, null, 0), {havePulse: !!V.last});
 }
 
 // ---------------- OLED renderer (port of Likembe::View, y offset 14) ----------------
@@ -237,7 +269,7 @@ function render(V, now){
 }
 
 // ---------------- sound (from docs/research/Congotronics line generator.html) ----------------
-let ac = null, master, revSend, kickBus, kickShaper, cache = {}, timer = null, playing = false;
+let ac = null, master, revSend, kickBus, kickShaper, cache = {}, timer = null;
 function makeTine(midi){
   const sr = ac.sampleRate, f = 440 * Math.pow(2, (midi - 69) / 12), len = Math.floor(sr * 1.4);
   const buf = ac.createBuffer(1, len, sr), y = buf.getChannelData(0);
@@ -327,9 +359,15 @@ function claveAt(t, p, B){
   const ng = ac.createGain(); ng.gain.value = lvl * .9; n.buffer = nb; n.connect(hp).connect(ng).connect(master); n.start(t);
 }
 const bpm = () => Math.max(20, Math.min(300, +$('#bpm').value || 82));
-// Each voice is clocked like TR1 from a 16th-note clock (x4 per beat); the engine
-// pulses on the first of every Div clocks (glue DivFire()). Gate = gatePct of the
-// engine-pulse interval (Div clocks).
+const beat = () => 60 / bpm();
+// ---- ClockSetup model (HSClockManager.h): per input slot 0..3 a multiplier; tocks on a
+// grid from the start time t0: m > 0 every beat/m, m < 0 every (1 - m) beats, first tock at t0.
+const clockS = {running: false, t0: 0, startAt: null, mult: [4, 0, 4, 0], next: [0, 0, 0, 0], last: 0};
+const tockPeriod = m => m > 0 ? beat() / m : beat() * (1 - m);
+function gridNext(ch, t){ const P = tockPeriod(clockS.mult[ch]); return clockS.t0 + Math.max(0, Math.ceil((t - clockS.t0) / P - 1e-9)) * P; }
+// ---- TR inputs: manual pulses + steady 4 PPQN at the BPM ----
+const trS = {steady: [false, false, false, false], next: [0, 0, 0, 0], queue: [[], [], [], []]};
+const active = () => clockS.running || trS.steady.some(x => x);
 let refNext = 0, refStep = 0;
 function tickRef(){
   const B = +$('#refgrid').value, step = 60 / bpm() / (B / 4);
@@ -338,41 +376,115 @@ function tickRef(){
     refNext += step; refStep = (refStep + 1) % B;
   }
 }
-function tick(){
-  tickRef();
-  voices.forEach((V, v) => {
-    while (V.nextTime < ac.currentTime + .12) {
-      const c = V.core, B = c.pulses_per_bar, clk = 60 / bpm() / 4, t = V.nextTime;
-      V.nextTime += clk;
-      if (!(V.divLeft === 0 || V.divLeft > c.params.div)) { --V.divLeft; continue; }
-      V.divLeft = c.params.div - 1;
-      const dur = clk * c.params.div;
-      const ev = c.Pulse();
-      let gateEnd = V.pendGateEnd || 0;
-      if (ev.note) {
-        const len = dur * lab.gatePct / 100;
-        gateEnd = t + len;
-        if (!V.mute) pluck(V, t, K.kMidiAtZeroUnits + ev.pitch_units / K.kUnitsPerSemitone, velOf(ev.accent), len);
-      }
-      V.pendGateEnd = gateEnd;
-      V.snaps.push(snapshot(V, t, ev, gateEnd));
-    }
-  });
+// Likembe::Reset(): bar start, figures kept; divider re-armed; next interval not measured.
+function resetVoice(V){ V.core.Reset(); V.divider.left = 0; V.havePulse = false; }
+// One IOFrame instant. clocked[ch] as IOFrame::Load builds it: internal tock when running and
+// the slot multiplier is not off, else the trigger map (slot ch <- TR ch+1). started = the
+// tick after ClockManager::Start() (APP_HEMISPHERE auto_reset: Reset() on every applet).
+function processFrame(t, clocked, started){
+  if (started) voices.forEach(resetVoice);
+  voices.forEach((V, v) => glue(V, v, t, clocked));
 }
-async function togglePlay(){
+// Port of Likembe::Controller() clock handling, same order.
+function glue(V, v, t, clocked){
+  const c = V.clk;
+  if (c.roll_in !== K.kRollOff && clocked[c.roll_in - K.kRollTr1]) V.core.Reroll();
+  const running = clockS.running;
+  let rst = false;
+  if (c.rst_in === K.kRstInt) rst = running && !V.wasRunning;
+  else if (c.rst_in >= K.kRstTr1) rst = !!clocked[c.rst_in - K.kRstTr1];
+  V.wasRunning = running;
+  if (rst) resetVoice(V);
+  const step = c.src === K.kSrcInt ? !!clocked[SLOT[v]] : (!!clocked[c.src - K.kSrcTr1] && E.pulseDividerTick(V.divider, c.div));
+  if (!step) return;
+  if (V.havePulse) V.stepDur = Math.min(t - V.lastStepT, 10);   // kMaxPulseTicks = 10 s
+  V.havePulse = true; V.lastStepT = t;
+  const ev = V.core.Pulse();
+  let gateEnd = V.pendGateEnd || 0;
+  if (ev.note) {
+    const len = V.stepDur * lab.gatePct / 100;
+    gateEnd = t + len;
+    if (!V.mute) pluck(V, t, K.kMidiAtZeroUnits + ev.pitch_units / K.kUnitsPerSemitone, velOf(ev.accent), len);
+  }
+  V.pendGateEnd = gateEnd;
+  V.snaps.push(snapshot(V, t, ev, gateEnd));
+}
+function tick(){
+  const horizon = ac.currentTime + .12, EPS = 1e-6;
+  for (;;) {
+    let t = Infinity;
+    for (let ch = 0; ch < 4; ++ch) {
+      if (clockS.running && clockS.mult[ch] !== 0) t = Math.min(t, clockS.next[ch]);
+      if (trS.steady[ch]) t = Math.min(t, trS.next[ch]);
+      if (trS.queue[ch].length) t = Math.min(t, trS.queue[ch][0]);
+    }
+    if (clockS.startAt !== null) t = Math.min(t, clockS.startAt);
+    if (!(t < horizon)) break;
+    const tock = [0, 0, 0, 0], tr = [0, 0, 0, 0];
+    for (let ch = 0; ch < 4; ++ch) {
+      if (clockS.running && clockS.mult[ch] !== 0 && clockS.next[ch] <= t + EPS) { tock[ch] = 1; clockS.next[ch] += tockPeriod(clockS.mult[ch]); }
+      if (trS.steady[ch] && trS.next[ch] <= t + EPS) { tr[ch] = 1; trS.next[ch] += beat() / 4; }
+      while (trS.queue[ch].length && trS.queue[ch][0] <= t + EPS) { trS.queue[ch].shift(); tr[ch] = 1; }
+    }
+    const started = clockS.startAt !== null && clockS.startAt <= t + EPS;
+    if (started) clockS.startAt = null;
+    const clocked = [0, 1, 2, 3].map(ch => (clockS.running && clockS.mult[ch] !== 0) ? tock[ch] : tr[ch]);
+    clockS.last = t;
+    processFrame(t, clocked, started);
+  }
+  if (clockS.running) tickRef();
+}
+async function ensureAudio(){
   if (!ac) initAudio();
   if (ac.state === 'suspended') await ac.resume();
-  playing = !playing;
-  $('#play').textContent = playing ? 'Stop' : 'Play'; $('#play').classList.toggle('on', playing);
-  if (playing) {
+  if (!timer) timer = setInterval(tick, 25);
+}
+async function togglePlay(){
+  await ensureAudio();
+  if (!clockS.running) {   // ClockManager::Start(): Reset(), first tock now
     const t0 = ac.currentTime + .06;
+    clockS.running = true; clockS.t0 = t0; clockS.startAt = t0; clockS.next = [t0, t0, t0, t0];
     refNext = t0; refStep = 0;
-    voices.forEach(V => { V.nextTime = t0; V.divLeft = 0; V.snaps = []; V.pendGateEnd = 0; V.gateEnd = 0; });
-    tick(); timer = setInterval(tick, 25);
-  } else {
-    clearInterval(timer);
-    voices.forEach((V, v) => { if (V.cur) V.cur.g.gain.setTargetAtTime(0, ac.currentTime, .02); V.snaps = []; V.gateEnd = 0; refreshIdle(v); });
+  } else {                 // Stop(); the glue sees running = false at once (Rst Int edge)
+    clockS.running = false; clockS.startAt = null;
+    const t = Math.max(ac.currentTime, clockS.last);
+    processFrame(t, [0, 0, 0, 0], false);
+    voices.forEach(V => { if (V.cur) V.cur.g.gain.setTargetAtTime(0, ac.currentTime, .02); });
   }
+  $('#play').textContent = clockS.running ? 'Stop' : 'Start'; $('#play').classList.toggle('on', clockS.running);
+  voices.forEach((_, v) => refreshIdle(v));
+}
+function buildClockUI(){
+  const opts = [];
+  for (let m = 1; m <= 24; ++m) opts.push(m);
+  for (let m = -1; m >= -31; --m) opts.push(m);
+  opts.push(0);
+  [0, 2].forEach(ch => {
+    const sel = $('#mult' + ch);
+    sel.innerHTML = opts.map(m => `<option value="${m}">${FMT.mult(m)}</option>`).join('');
+    sel.value = String(clockS.mult[ch]);
+    sel.onchange = () => {
+      clockS.mult[ch] = parseInt(sel.value, 10);
+      if (clockS.running && ac && clockS.mult[ch] !== 0) clockS.next[ch] = gridNext(ch, Math.max(ac.currentTime, clockS.last) + 1e-6);
+    };
+  });
+  $('#bpm').addEventListener('change', () => {   // new tempo from the next grid point (phase restarts there)
+    if (!clockS.running || !ac) return;
+    const t = Math.min(...[0, 1, 2, 3].filter(ch => clockS.mult[ch] !== 0).map(ch => clockS.next[ch]).concat([Infinity]));
+    if (t === Infinity) return;
+    clockS.t0 = t; for (let ch = 0; ch < 4; ++ch) if (clockS.mult[ch] !== 0) clockS.next[ch] = gridNext(ch, t);
+    refNext = t; refStep = 0;
+  });
+  $('#trs').innerHTML = '<span class="muted">TR inputs:</span>' + [1, 2, 3, 4].map(n =>
+    `<span class="bar" style="gap:4px">${FMT.tr(n)} <button data-trp="${n - 1}">pulse</button><label><input type="checkbox" data-trs="${n - 1}"> steady</label></span>`).join('');
+  document.querySelectorAll('[data-trp]').forEach(b => b.onclick = async () => {
+    await ensureAudio(); trS.queue[+b.dataset.trp].push(ac.currentTime + .02);
+  });
+  document.querySelectorAll('[data-trs]').forEach(cb => cb.onchange = async () => {
+    await ensureAudio(); const ch = +cb.dataset.trs;
+    trS.steady[ch] = cb.checked; trS.next[ch] = ac.currentTime + .03;
+    voices.forEach((_, v) => refreshIdle(v));
+  });
 }
 function frameLoop(){
   const now = ac ? ac.currentTime : 0;
@@ -445,7 +557,7 @@ function syncLab(){
   $('[data-gv="2"]').textContent = '';
 }
 function pushLab(){   // engine constants at the next bar line (immediately when stopped)
-  voices.forEach((V, v) => { if (playing) V.core.setLab(lab); else { V.core.lab = E.cloneLab(lab); V.core.labPending = null; refreshIdle(v); } });
+  voices.forEach((V, v) => { if (active()) V.core.setLab(lab); else { V.core.lab = E.cloneLab(lab); V.core.labPending = null; refreshIdle(v); } });
 }
 function exportConstants(){
   const parts = K.kPartNames, out = ['// likembe_constants.h -- values from the Likembe browser lab'];
@@ -475,7 +587,7 @@ function exportConstants(){
 
 // ---------------- dump ----------------
 function dumpVoice(v){
-  const V = voices[v], p = V.core.params, labNow = playing && V.core.labPending ? V.core.labPending : V.core.lab;
+  const V = voices[v], p = V.core.params, labNow = active() && V.core.labPending ? V.core.labPending : V.core.lab;
   const args = `--seed ${p.seed} --part ${p.part} --dens ${p.density_pct} --root ${p.root} --oct ${p.octave} --len ${p.len} --var ${p.variation_pct} --pass ${p.passage_idx} --bars ${V.dumpBars}`;
   const fw = JSON.stringify(labNow.parts[p.part]) === JSON.stringify(E.labDefaults().parts[p.part]) && labNow.lStartMiddle === E.labDefaults().lStartMiddle;   // velocities/gate do not affect events
   const o = $('#dumpOut'); o.hidden = false;
@@ -484,6 +596,7 @@ function dumpVoice(v){
 
 // ---------------- wiring ----------------
 voices.forEach((_, v) => buildVoiceUI(v));
+buildClockUI();
 buildLab();
 voices.forEach((_, v) => refreshIdle(v));
 $('#play').onclick = togglePlay;

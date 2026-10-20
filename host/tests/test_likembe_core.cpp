@@ -5,6 +5,7 @@
 #include <cstdio>
 #include <cstring>
 #include "custom/core/likembe_core.h"
+#include "custom/core/likembe_clock.h"
 
 static int g_fail = 0;
 #define CHECK(cond) do { if (!(cond)) { std::printf("  check failed: %s (line %d)\n", #cond, __LINE__); ok = false; } } while (0)
@@ -329,22 +330,25 @@ TEST(pitch_mapping_and_range) {
 
 TEST(pack_unpack) {
   bool ok = true;
-  LikembeParams p; p.density_pct = 77; p.part = 3; p.root = 11; p.octave = -2; p.len = 27; p.div = 5;
-  p.variation_pct = 100; p.passage_idx = 8; p.seed = 0xBEEF; p.clock_src = lk::kClockTr4;
+  LikembeParams p; p.density_pct = 77; p.part = 3; p.root = 11; p.octave = -2; p.len = 27;
+  p.variation_pct = 100; p.passage_idx = 8; p.seed = 0xBEEF;
   LikembeCore a; a.Init(p);
   uint64_t d = a.Pack();
-  CHECK(d >> 54 == 0 && ((d >> 51) & 0x7) == lk::kClockTr4 && ((d >> 13) & 0x1F) == 25 && ((d >> 18) & 0x7) == 4);
+  CHECK(d >> LikembeCore::kPackBits == 0 && ((d >> 13) & 0x1F) == 25 && ((d >> 29) & 0x7) == 0 && ((d >> 32) & 0xFFFF) == 0xBEEF);
   LikembeCore b; b.Unpack(d);
   CHECK(std::memcmp(&a.params, &b.params, sizeof p) == 0);
   CHECK(LikembeCore::SameFigures(a.thumb, b.thumb));
+  // glue bits 48..63 do not disturb the core fields
+  {
+    LikembeParams q = LikembeCore::UnpackParams(d | (~0ull << 48));
+    CHECK(std::memcmp(&q, &a.params, sizeof q) == 0);
+  }
   // garbage
   LikembeParams g = LikembeCore::UnpackParams(~0ull);
-  CHECK(g.density_pct == 100 && g.octave == lk::kOctaveMax && g.root == 11 && g.variation_pct == 100 && g.passage_idx == lk::kPassageCount - 1 && g.clock_src == lk::kClockAuto
-        && g.len == lk::kLenMax && g.div == lk::kDivMax);
+  CHECK(g.density_pct == 100 && g.octave == lk::kOctaveMax && g.root == 11 && g.variation_pct == 100 && g.passage_idx == lk::kPassageCount - 1
+        && g.len == lk::kLenMax);
   g = LikembeCore::UnpackParams(0);
-  CHECK(g.density_pct == 0 && g.octave == lk::kOctaveMin && g.clock_src == lk::kClockAuto && g.len == lk::kLenMin && g.div == lk::kDivMin);
-  for (uint8_t s = 0; s < 8; ++s)
-    CHECK(LikembeCore::UnpackParams((uint64_t)s << 51).clock_src == (s < lk::kClockSrcCount ? s : lk::kClockAuto));
+  CHECK(g.density_pct == 0 && g.octave == lk::kOctaveMin && g.len == lk::kLenMin);
   for (int o = lk::kOctaveMin; o <= lk::kOctaveMax; ++o) {
     p.octave = (int8_t)o; a.Init(p);
     CHECK(LikembeCore::UnpackParams(a.Pack()).octave == o);
@@ -356,6 +360,54 @@ TEST(pack_unpack) {
   CHECK(z.thumb[0].n >= 2 && z.thumb[0].n != z.thumb[1].n);
   std::printf("  sizeof(LikembeCore) = %zu\n", sizeof(LikembeCore));
   CHECK(sizeof(LikembeCore) < 200);
+  return ok;
+}
+
+// Clock page settings: pack into bits 48..61 only, round trip, clamp garbage,
+// per-hemisphere Roll default.
+TEST(clock_pack_unpack) {
+  bool ok = true;
+  using custom::LikembeClock;
+  LikembeClock dl = LikembeClock::Defaults(false), dr = LikembeClock::Defaults(true);
+  CHECK(dl.src == lk::kSrcInt && dl.div == 1 && dl.roll_in == lk::kRollTr2 && dl.rst_in == lk::kRstInt);
+  CHECK(dr.roll_in == lk::kRollTr4);
+  LikembeClock c{lk::kSrcTr3, 24, lk::kRollOff, lk::kRstTr4};
+  uint64_t d = c.Pack();
+  CHECK((d & ((1ull << 48) - 1)) == 0 && (d >> 62) == 0);
+  LikembeClock u = LikembeClock::Unpack(d | 0xFFFFFFFFFFFFull, false);
+  CHECK(u.src == c.src && u.div == 24 && u.roll_in == c.roll_in && u.rst_in == c.rst_in);
+  for (int v = lk::kClockDivMin; v <= lk::kClockDivMax; ++v) { c.div = (uint8_t)v; CHECK(LikembeClock::Unpack(c.Pack(), true).div == v); }
+  LikembeClock g = LikembeClock::Unpack(~0ull, true);
+  CHECK(g.src == lk::kSrcInt && g.div == lk::kClockDivMax && g.roll_in == lk::kRollTr4 && g.rst_in == lk::kRstInt);
+  g = LikembeClock::Unpack(~0ull, false);
+  CHECK(g.roll_in == lk::kRollTr2);
+  g = LikembeClock::Unpack(0, false);
+  CHECK(g.src == lk::kSrcInt && g.div == 1 && g.roll_in == lk::kRollOff && g.rst_in == lk::kRstOff);
+  // core + clock share one uint64 without overlap
+  LikembeCore a = Make(lk::kPartLead, 77);
+  LikembeClock k{lk::kSrcTr2, 7, lk::kRollTr1, lk::kRstTr3};
+  uint64_t all = a.Pack() | k.Pack();
+  LikembeParams q = LikembeCore::UnpackParams(all);
+  CHECK(std::memcmp(&q, &a.params, sizeof q) == 0);
+  LikembeClock k2 = LikembeClock::Unpack(all, false);
+  CHECK(k2.src == k.src && k2.div == 7 && k2.roll_in == k.roll_in && k2.rst_in == k.rst_in);
+  return ok;
+}
+
+// Divider: fires on the first pulse, then every Div pulses; Reset re-arms;
+// lowering Div below the remaining count fires on the next pulse.
+TEST(pulse_divider) {
+  bool ok = true;
+  custom::PulseDivider d;
+  const char* want3 = "100100100";
+  for (int i = 0; i < 9; ++i) CHECK(d.Tick(3) == (want3[i] == '1'));
+  for (int i = 0; i < 5; ++i) CHECK(d.Tick(1));
+  d.Reset(); CHECK(d.Tick(8)); CHECK(!d.Tick(8)); CHECK(!d.Tick(8));   // 5 left
+  CHECK(d.Tick(3));                                                    // 5 > 3: fire now
+  CHECK(!d.Tick(3)); CHECK(!d.Tick(3)); CHECK(d.Tick(3));
+  d.Reset(); CHECK(d.Tick(24));
+  int n = 0; for (int i = 0; i < 23; ++i) n += d.Tick(24);
+  CHECK(n == 0 && d.Tick(24));
   return ok;
 }
 
@@ -446,6 +498,8 @@ int main() {
   RUN(params_live_immediate);
   RUN(pitch_mapping_and_range);
   RUN(pack_unpack);
+  RUN(clock_pack_unpack);
+  RUN(pulse_divider);
   RUN(cycle_bars_and_index);
   RUN(len_sweep);
   { LikembeCore c = Make(lk::kPartLead, 1); Dump(c, "example lead"); }

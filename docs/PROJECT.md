@@ -31,6 +31,7 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 | `docs/BUILD.md` | current | Build, flash, envs, size budget (maintained by build work) |
 | `docs/UPSTREAM.md` | current | Subtree workflow, local edits to `firmware/`, licensing |
 | `docs/HOST_SIM.md` | current | Host test harness and simulator |
+| `docs/CLOCK.md` | current | Upstream clock layers (trigger map, ClockManager) with file:line refs; applet clock rules; host coverage |
 | `docs/clock/MASTER_CLOCK_CONCEPT.md` | shelved | Clock buses proposal (reference only) |
 | `docs/modules/README.md` | current | Module index + overlapping upstream applets |
 | `docs/modules/likembe.md` | current | Likembe module doc (as built, hardware pending) |
@@ -61,7 +62,9 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   Tier 2 weegfx render (`task host:render`, PBM/PGM), Tier 3 applet harness (`task host:sim`)
   compiling the real `HemisphereApplet.cpp`/`HSUtils.cpp`/`HSIOFrame.cpp` against `host/stub/`.
   SDL interactive sim planned, not built.
-- Host gaps: one applet on one side; no ClockSetup/internal clock; no MIDI/EEPROM.
+- Host gaps: one applet per side, no HemisphereManager/select mode/ClockSetup UI; no MIDI/EEPROM.
+  Since 2026-10-20 the real `HS::clock_m` + `ClockSetup::Controller()` run in the sim
+  (internal clock, multipliers, PPQN/TR1 sync; `docs/HOST_SIM.md`).
 - `custom_min` currently 92,836 B flash / 20,472 B RAM.
 - Likembe (Phase 3): core + glue (`custom/applets/Likembe.h`, ID 201) implemented, host tests
   pass, sim-verified (I/O timing, CV1 density, screenshots). Not yet on
@@ -72,6 +75,11 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   2026-10-19 (host + sim-verified, not hardware): `Grid` replaced by `Len` (pulses per bar 2..32)
   and `Div` (clock division 1..8); menu Dens, Var, Part, Root, Oct, Len, Div, Roll, Seed, Clk;
   packed layout re-laid out (54 bits). `custom_min` 98,724 B flash / 20,792 B RAM (+64 B / +8 B).
+  2026-10-20 (host + sim-verified, not hardware): **Clock page** replaces `Div` and `Clk`. Main list
+  Dens, Var, Part, Len, Root, Oct, Roll, Seed, `Clock >`; page rows Src (Int/TR1-4), Div (1-24, TRn only),
+  Roll (re-roll input Off/TR1-4, default own 2nd input), Rst (Off/Int/TR1-4), Back. Settings packed in
+  bits 48-61 (`custom/core/likembe_clock.h`), core re-laid out to bits 0-47. Rules: `docs/CLOCK.md`.
+  `custom_min` 99,476 B flash / 20,824 B RAM (+752 B / +32 B).
 - Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 16 combinations incl. Len 2/7/12/16/24/32).
 
 ### Open decisions
@@ -99,3 +107,5 @@ Hello hardware check (Phase 1 remainder) can be done with the same flash.
 | 2026-10-10 | License: GPLv3 (GPL-3.0-or-later) for the whole repo, `LICENSE` at root | Combined work is GPLv3 anyway (4 GPLv3 upstream files); matches NitroTron3; repo may be published on GitHub. Details `docs/UPSTREAM.md` |
 | 2026-10-19 | A setting change is audible immediately; no waiting for the next bar/step unless the module doc states otherwise | Turning a knob must give instant feedback; deferred changes feel broken. Likembe: Len (was Grid)/Part/Seed and TR2 re-roll now immediate |
 | 2026-10-19 | No master clock rework; use upstream clock + trigger map | Existing per-channel mult/div and in-applet division cover the needs; keeps `firmware/` edits at 2 files |
+| 2026-10-20 | Clock page model: applets step once per pulse; `Src Int` = upstream routing (`Clock(0)`), `Src TRn` = `frame.clocked[n-1]` + pulse counter only; Roll/Rst trigger inputs per applet; applet-drawn sub-page with `Back` row | No tempo logic in applets; one place (ClockSetup) owns tempo/multipliers. Details `docs/CLOCK.md` |
+| 2026-10-20 | Real `ClockSetup`/`HS::clock_m` compiled into the host sim | `Src Int` / `Rst Int` / external sync become host-testable without stubbing clock behaviour |

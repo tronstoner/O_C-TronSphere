@@ -58,6 +58,11 @@ std::string Raw(int32_t units) { return Printf("%+6d", (int)units); }
 std::string Seconds(double s) { return Printf("%.3f s", s); }
 std::string Ratio(double r) { return Printf("%.2fx", r); }
 std::string Bpm(double b) { return Printf("%g BPM", b); }
+// Internal clock multiplier as ClockSetup shows it: x4, /2, off.
+std::string Mult(int m) { return m == 0 ? "off" : (m > 0 ? Printf("x%d", m) : Printf("/%d", 1 - m)); }
+std::string IntState() {
+  return simcore::IntRunning() ? "RUNNING" : (simcore::IntArmed() ? "ARMED (TR1)" : "stopped");
+}
 }  // namespace fmt
 
 // ---------------------------------------------------------------------------
@@ -66,6 +71,9 @@ constexpr int kCvMin = -10 * simcore::kUnitsPerVolt, kCvMax = 10 * simcore::kUni
 constexpr int kSemitone = 128, kOctave = simcore::kUnitsPerVolt;
 constexpr int kStepTicks = 17;                       // '.' = 1 ms
 constexpr int kBpmStep = 5, kBpmMin = 5, kBpmMax = 600;
+constexpr int kIntBpmStep = 1, kIntBpmBigStep = 10;   // internal clock -/= (Shift: big step)
+constexpr int kMultMin = -31, kMultMax = 24;           // HS::CLOCK_MIN/MAX_MULTIPLE
+constexpr int kPpqnMax = 24;
 constexpr uint32_t kTrigFlashTicks = simcore::kTickHz / 20;  // output trigger marker: 50 ms
 constexpr uint32_t kMaxTicksPerFrame = simcore::kTickHz / 10;  // drop backlog beyond 100 ms
 
@@ -153,7 +161,7 @@ void OnKey(Ui &u, SDL_Keycode k, bool shift, bool down, bool repeat) {
       me = true;
       if (other) {
         u.dual = true;
-        Msg(u, "Up+Down = Clock Setup: not simulated (ClockSetup is not ticked)");
+        Msg(u, "Up+Down = Clock Setup UI: not simulated (internal clock: I, -/=, M, N)");
       }
     } else {
       me = false;
@@ -213,6 +221,31 @@ void OnKey(Ui &u, SDL_Keycode k, bool shift, bool down, bool repeat) {
       double b = simcore::ClockBpm() + (k == SDLK_RIGHTBRACKET ? kBpmStep : -kBpmStep);
       simcore::SetClockBpm(b < kBpmMin ? kBpmMin : (b > kBpmMax ? kBpmMax : b));
       Msg(u, "clock " + fmt::Bpm(simcore::ClockBpm()));
+      break;
+    }
+    case SDLK_i:
+      if (repeat) break;
+      if (shift) simcore::IntStart(true);
+      else if (simcore::IntRunning() || simcore::IntArmed()) simcore::IntStop();
+      else simcore::IntStart(false);
+      Msg(u, "internal clock " + fmt::IntState());
+      break;
+    case SDLK_MINUS: case SDLK_EQUALS: {
+      const int b = simcore::IntBpm() + (shift ? kIntBpmBigStep : kIntBpmStep) * (k == SDLK_EQUALS ? 1 : -1);
+      simcore::IntSetBpm(b < kBpmMin ? kBpmMin : (b > kBpmMax ? kBpmMax : b));
+      Msg(u, "internal clock " + fmt::Bpm(simcore::IntBpm()));
+      break;
+    }
+    case SDLK_m: {
+      const int m = simcore::IntMultiply(u.sel) + (shift ? -1 : 1);
+      simcore::IntSetMultiply(u.sel, m < kMultMin ? kMultMin : (m > kMultMax ? kMultMax : m));
+      Msg(u, fmt::Printf("internal clock slot %d multiplier ", u.sel + 1) + fmt::Mult(simcore::IntMultiply(u.sel)));
+      break;
+    }
+    case SDLK_n: {
+      const int q = simcore::IntPpqn() + (shift ? -1 : 1);
+      simcore::IntSetPpqn(q < 0 ? 0 : (q > kPpqnMax ? kPpqnMax : q));
+      Msg(u, fmt::Printf("internal clock sync PPQN %d (TR1)", simcore::IntPpqn()));
       break;
     }
     case SDLK_ESCAPE: u.quit = true; break;
@@ -305,6 +338,12 @@ void DrawPanel(Ui &u) {
   c = Text(u, 1, r, kDim, "CLOCK ");
   c = Text(u, c, r, kText, fmt::Bpm(simcore::ClockBpm()) + fmt::Printf(" x%d/beat -> TR%d", simcore::ClockPpb(), simcore::ClockTr() + 1));
   Text(u, c + 2, r, simcore::ClockEnabled() ? kHigh : kDim, simcore::ClockEnabled() ? "RUNNING" : "stopped");
+  ++r;
+  c = Text(u, 1, r, kDim, "INT   ");
+  c = Text(u, c, r, kText, fmt::Bpm(simcore::IntBpm()) + fmt::Printf(" ppqn %d  mult", simcore::IntPpqn()));
+  for (int ch = 0; ch < 4; ++ch)
+    c = Text(u, c + 1, r, ch == u.sel ? kAccent : kText, fmt::Printf("%d:", ch + 1) + fmt::Mult(simcore::IntMultiply(ch)));
+  Text(u, c + 2, r, simcore::IntRunning() ? kHigh : (simcore::IntArmed() ? kAccent : kDim), fmt::IntState());
   r += 2;
   const char *legend[] = {
       "A/D  left enc -/+      S  left push      Q  Up button",
@@ -313,6 +352,9 @@ void DrawPanel(Ui &u) {
       "0    zero CV     Z X C V  gate TR1-4 (hold), Shift latch",
       "Space pause   . step 1ms   P screenshot   R reset   Esc",
       "T    clock on/off   [ ] clock BPM -/+5   * = output trigger",
+      "I    int clock start/stop     Shift+I  arm (starts on TR1)",
+      "- =  int BPM -/+1 (Shift 10)  N  sync PPQN +1 (Shift -1)",
+      "M    int multiplier of the selected input +1 (Shift -1)",
   };
   for (const char *l : legend) Text(u, 1, r++, kDim, l);
   ++r;
@@ -374,6 +416,8 @@ void InjectKeys(Ui &u) {
     else if (t == "esc") k = SDLK_ESCAPE;
     else if (t == "lbracket") k = SDLK_LEFTBRACKET;
     else if (t == "rbracket") k = SDLK_RIGHTBRACKET;
+    else if (t == "minus") k = SDLK_MINUS;
+    else if (t == "equals") k = SDLK_EQUALS;
     else if (t.size() == 1) k = (SDL_Keycode)std::tolower((unsigned char)t[0]);
     else { std::fprintf(stderr, "--keys: unknown key '%s'\n", t.c_str()); std::exit(2); }
     if (phase != 2) OnKey(u, k, shift, true, false);
@@ -442,7 +486,7 @@ int main(int argc, char **argv) {
   u.W = kOledW * u.opt.scale;
   if (u.W < 64 * 6 * u.p) u.W = 64 * 6 * u.p;  // panel needs 64 columns
   u.oled_h = kOledH * u.opt.scale;
-  u.H = u.oled_h + 4 * u.p + 19 * LineH(u);
+  u.H = u.oled_h + 4 * u.p + 23 * LineH(u);
   u.px.assign((size_t)u.W * u.H, kOff);
 
   auto name = [](const std::string &n) { return n == "none" ? nullptr : n.c_str(); };

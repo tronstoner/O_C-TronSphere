@@ -21,6 +21,7 @@ hemispheres), 4 CV in, 4 trigger in, 4 CV out, 2 push encoders, 2 buttons.
 | Touching `firmware/`, pulling upstream, licensing | `docs/UPSTREAM.md` |
 | How the firmware works (ISR, IOFrame, applets, display, presets) | `docs/ARCHITECTURE.md` |
 | Host tests / simulator | `docs/HOST_SIM.md` |
+| Clock: upstream trigger map + ClockSetup, how applets take pulses | `docs/CLOCK.md` |
 | Clock buses (shelved, reference) | `docs/clock/MASTER_CLOCK_CONCEPT.md` |
 | A specific module | `docs/modules/README.md` → that module's docs |
 | Upstream facts (branches, applet API, inventory) | `docs/research/phazerville-notes.md` |
@@ -42,7 +43,8 @@ Any other topic: check `docs/PROJECT.md` § Document Map before assuming a doc d
 - **A setting change is audible immediately.** No waiting for the next bar/step unless the
   module doc states otherwise (decided 2026-10-19).
 - Clock: use the upstream ClockSetup/trigger map as is. No clock rework (decided 2026-10-19).
-  Applets derive their own divisions; `HS::clock_m` may be read directly.
+  Applets step on pulses and divide by counting only (no tempo derivation); see
+  `docs/CLOCK.md`. `HS::clock_m` may be read directly.
 
 ## Repository layout
 
@@ -129,6 +131,8 @@ Exception to the "go" rule: trivial numeric or obvious choices inside an approve
   shift works, no allocation. Do heavy work (pattern mutation, regeneration) once per
   clock/pass event, spread across ticks if needed.
 - **`View()` is cheap**: draw from state, never compute state in `View()`.
+- **Sub-pages**: an applet may open an applet-drawn page from a cursor row; a `Back` row
+  returns to the main list (cursor on the opening row). See the Likembe Clock page.
 - **Applet glue stays thin**: parameter mapping, I/O, drawing. Logic belongs in `custom/core`.
 - **Applet IDs 200+** for our applets, so they never collide with upstream IDs in presets.
 - **64-bit state discipline.** Each applet persists exactly one `uint64_t`

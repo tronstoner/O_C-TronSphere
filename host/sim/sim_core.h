@@ -52,6 +52,21 @@ int ClockTr();
 // (fires on the next tick if t already passed).
 void ScheduleTrigger(int tr, double t);
 
+// Internal clock: the real HS::clock_m driven by the real ClockSetup::Controller()
+// each tick (host_clocksetup.cpp). External sync = TR1 pulses at the input PPQN.
+void IntStart(bool armed = false);   // clock_m.Start(): running now; armed = paused, starts on TR1
+void IntStop();
+bool IntRunning();                   // clock_m.IsRunning()
+bool IntArmed();                     // clock_m.IsPaused()
+void IntSetBpm(int bpm);             // SetTempoBPM (1..65535)
+int IntBpm();
+// Per-slot multiplier (slot 0..3 = left in 1, 2, right in 1, 2): 1..24 = x1..x24,
+// -1..-31 = /2../32, 0 = off (slot uses the trigger map even while running).
+void IntSetMultiply(int slot, int m);
+int IntMultiply(int slot);
+void IntSetPpqn(int ppqn);           // external clock pulses per beat (0..24)
+int IntPpqn();
+
 // Outputs (pitch units, frame.ViewOut)
 int32_t Out(int ch);
 // Output observation, evaluated after every tick (after frame.Send()).

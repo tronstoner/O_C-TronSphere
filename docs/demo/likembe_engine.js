@@ -13,7 +13,7 @@
 const C = {
   kUnitsPerSemitone: 128, kMidiAtZeroUnits: 36, kMaxPitchUnits: 9216,
   kTunings: [[0, 2, 4, 7, 9]],
-  kLenMin: 2, kLenMax: 32, kDefaultLen: 16, kDivMin: 1, kDivMax: 8, kDefaultDiv: 1, kMinLoop: 2, kMaxLoop: 8,
+  kLenMin: 2, kLenMax: 32, kDefaultLen: 16, kMinLoop: 2, kMaxLoop: 8,
   kPolicyFit: 0, kPolicyOneDrift: 1, kPolicyBothDrift: 2,
   kPartNames: ['Bass', 'Lead', 'MiSol', 'Solo'],
   kParts: [
@@ -26,7 +26,11 @@ const C = {
   kDensityMax: 100, kOctaveMin: -2, kOctaveMax: 3, kDefaultOctave: 0, kVariationMax: 100,
   kDensityCvRange: 35,
   kPassageBars: [0, 1, 2, 3, 4, 5, 6, 7, 8],
-  kClockAuto: 0, kClockSrcCount: 5,
+  // Clock page (glue): ClockSrc, kClockDiv*, RollIn, RstIn
+  kSrcInt: 0, kSrcTr1: 1, kSrcCount: 5, kClockDivMin: 1, kClockDivMax: 24, kDefaultClockDiv: 1,
+  kRollOff: 0, kRollTr1: 1, kRollCount: 5, kDefaultRollLeft: 2, kDefaultRollRight: 4,
+  kRstOff: 0, kRstInt: 1, kRstTr1: 2, kRstCount: 6, kDefaultRst: 1,
+  kDefaultPulseTicks: 2083, kTickHz: 16666,   // gate length % = lab.gatePct (kGateLengthPct)
   kDefaultPassageIdx: 0, kDefaultRoot: 4, kDefaultSeed: 1,
   kPartStreamOffset: 7919, kPassageStreamOffset: 31, kSeedMix: 0x9E3779B1, kSeedNonZero: 0x6D2B79F5,
 };
@@ -68,8 +72,8 @@ const bit = n => (1 << n) >>> 0;
 function defaults(part) {
   if (!(part >= 0 && part < 4)) part = 0;
   return {density_pct: C.kParts[part].density_pct, part, root: C.kDefaultRoot, octave: C.kDefaultOctave,
-    len: C.kDefaultLen, div: C.kDefaultDiv, variation_pct: C.kParts[part].variation_pct, passage_idx: C.kDefaultPassageIdx,
-    seed: C.kDefaultSeed, clock_src: C.kClockAuto};
+    len: C.kDefaultLen, variation_pct: C.kParts[part].variation_pct, passage_idx: C.kDefaultPassageIdx,
+    seed: C.kDefaultSeed};
 }
 function clampParams(p) {
   p = Object.assign({}, p);
@@ -78,11 +82,9 @@ function clampParams(p) {
   if (p.root > 11) p.root = 11;
   p.octave = clampI(p.octave, C.kOctaveMin, C.kOctaveMax);
   p.len = clampI(p.len | 0, C.kLenMin, C.kLenMax);
-  p.div = clampI(p.div | 0, C.kDivMin, C.kDivMax);
   if (p.variation_pct > C.kVariationMax) p.variation_pct = C.kVariationMax;
   if (p.passage_idx >= C.kPassageBars.length) p.passage_idx = C.kPassageBars.length - 1;
   p.seed = p.seed & 0xFFFF;
-  if (!(p.clock_src >= 0 && p.clock_src < C.kClockSrcCount)) p.clock_src = C.kClockAuto;
   return p;
 }
 const newThumb = () => ({n: 2, phase: 0, e: Array.from({length: 8}, () => ({degree: 0, draw: 0}))});
@@ -367,6 +369,20 @@ function dump(params, bars, lab) {
   return out.join('\n') + '\n';
 }
 
-const E = {C, Core, labDefaults, cloneLab, defaults, clampParams, dump};
+// ---- custom/core/likembe_clock.h (glue-level Clock page) ----
+// LikembeClock::Defaults(right): Src Int, Div 1, Roll = own 2nd input, Rst Int.
+function clockDefaults(right) {
+  return {src: C.kSrcInt, div: C.kDefaultClockDiv, roll_in: right ? C.kDefaultRollRight : C.kDefaultRollLeft, rst_in: C.kDefaultRst};
+}
+// PulseDivider::Tick, 1:1: fires on the first pulse after reset (left = 0), then
+// every div pulses; a div lowered below the remaining count fires on the next pulse.
+function pulseDividerTick(d, div) {   // d = {left}
+  const fire = d.left === 0 || d.left > div;
+  if (fire) d.left = div;
+  d.left -= 1;
+  return fire;
+}
+
+const E = {C, Core, labDefaults, cloneLab, defaults, clampParams, dump, clockDefaults, pulseDividerTick};
 if (typeof module !== 'undefined' && module.exports) module.exports = E; else root.LikembeEngine = E;
 })(typeof window !== 'undefined' ? window : this);

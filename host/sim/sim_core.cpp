@@ -8,6 +8,9 @@
 #include <vector>
 #include "host_applets.h"
 
+void HostTrigIsr(int ch);           // host_clocksetup.cpp
+void HostClockSetupController();    // host_clocksetup.cpp
+
 static_assert(simcore::kTickHz == OC_CORE_ISR_FREQ, "tick rate mismatch");
 static_assert(simcore::kFrameBytes == weegfx::Graphics::kFrameSize, "frame size mismatch");
 static_assert(simcore::kTrigTicks == HEMISPHERE_CLOCK_TICKS, "trigger width mismatch");
@@ -21,6 +24,7 @@ HemisphereApplet *A(Side s) { return applets[s]; }
 
 // Gate inputs: manual level OR pulse (clock source / scheduled trigger).
 bool manual[4] = {};
+bool pin_was_high[4] = {};      // trigger level last tick, for the pin ISR edge
 uint32_t pulse_until[4] = {};  // pin high while ticks < pulse_until
 
 struct Clock {
@@ -90,10 +94,22 @@ void Tick() {
     if (pending[i].tick <= now) { Pulse(pending[i].tr, now); pending.erase(pending.begin() + i); }
     else ++i;
   ApplyPins(now);
+  for (int ch = 0; ch < 4; ++ch) {   // TRn pin interrupt on the rising trigger edge
+    const bool high = host_pin_level[kPins[ch]] == LOW;
+    if (high && !pin_was_high[ch]) HostTrigIsr(ch);
+    pin_was_high[ch] = high;
+  }
 
+  // HSApplication::BaseController: ClockSetup first, then the IO frame.
+  HostClockSetupController();
   HS::frame.Load();
+  // HemisphereManager::Controller: auto_reset (set by clock_m.Start()) resets every applet.
   for (int h = 0; h < 2; ++h)
-    if (applets[h]) applets[h]->Controller();
+    if (applets[h]) {
+      if (HS::clock_m.auto_reset) applets[h]->Reset();
+      applets[h]->Controller();
+    }
+  HS::clock_m.auto_reset = false;
   HemisphereApplet::ProcessCursors();
   HS::frame.Send();
 
@@ -157,6 +173,17 @@ void ScheduleTrigger(int tr, double t) {
   long k = (long)(t * kTickHz + 0.5);
   pending.push_back({(uint32_t)(k < 1 ? 1 : k), tr & 3});
 }
+
+void IntStart(bool armed) { HS::clock_m.Start(armed); }
+void IntStop() { HS::clock_m.Stop(); }
+bool IntRunning() { return HS::clock_m.IsRunning(); }
+bool IntArmed() { return HS::clock_m.IsPaused(); }
+void IntSetBpm(int bpm) { HS::clock_m.SetTempoBPM((uint16_t)(bpm < 1 ? 1 : bpm)); }
+int IntBpm() { return HS::clock_m.GetTempo(); }
+void IntSetMultiply(int slot, int m) { HS::clock_m.SetMultiply(m, slot & 3); }
+int IntMultiply(int slot) { return HS::clock_m.GetMultiply(slot & 3); }
+void IntSetPpqn(int ppqn) { HS::clock_m.SetClockPPQN(ppqn); }
+int IntPpqn() { return HS::clock_m.GetClockPPQN(); }
 
 void SetOutListener(OutListener *l) { listener = l; }
 int64_t LastOutTrigTick(int ch) { return last_trig[ch & 3]; }
