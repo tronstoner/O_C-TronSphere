@@ -97,6 +97,11 @@ A user message that contains new input while an implementation is running is dis
 not a change of the running task; stop and go back to phase 2 if the input affects it.
 Exception to the "go" rule: trivial numeric or obvious choices inside an approved task.
 
+Engine model changes (anything that alters how a module generates its output, not just a
+constant): prototype in the module's browser lab first as a switchable option, user listens
+and decides, only then port to the core. 2026-10-20: a core-first model change destroyed the
+Likembe character and was reverted.
+
 Proposal quality:
 - Every code fact a proposal relies on (what an API returns, what the framework already does)
   is verified in the source before the proposal is presented. Never build a proposal on memory
