@@ -11,7 +11,7 @@ Spec: `docs/research/Likembe pattern engine technical concept.md`; JS reference:
 
 Generates one monophonic, interlocking likembe-style line (Congotronics) on an external
 pulse clock. Two virtual thumbs strike on alternate pulses; each loops its own short figure
-(2–8 strokes). Cross-rhythm comes from the different loop lengths. The figures evolve
+(2–8 strokes, capped at Len). Cross-rhythm comes from the different loop lengths. The figures evolve
 slowly (mutations with return to theme) and are replaced by a new passage on a re-roll or
 after an optional passage length.
 
@@ -63,7 +63,7 @@ happens at the bar line, by definition.
 | 8 `Seed` | Seed | 0–65535 (decimal) | 1 | any turn in edit mode = new random seed | immediately (`RerollNow`, same as the Roll input) |
 | 9 `Clock` | Shown `Clock >`; **push opens the Clock page** (no edit mode) | — | — | — | — |
 
-Len 1 (without the lab cap): one pulse per bar, thumb L plays it, phases do not advance at the bar line (strokes = 0); parts with a start offset (Lead/MiSolo/Solo) are silent.
+Len 1: one pulse per bar, both loops are one element (loop cap), thumb L plays it, phases do not advance at the bar line (strokes = 0); parts with a start offset (Lead/MiSolo/Solo) are silent.
 
 **Clock page** (applet-drawn sub-page, own cursor; settings `custom::LikembeClock`,
 `custom/core/likembe_clock.h`). Turn = move between rows, push = edit (inverted) / leave
@@ -107,6 +107,13 @@ every length counts as fit (`FitMask`). The default loops above apply at Len 16 
 other Len the start loop lengths are rolled under the part policy from the passage stream
 (`RollLoopLengths`), so they are deterministic per seed. With an odd Len the thumbs still
 advance Len/2 (floored) strokes per bar.
+
+**Loop cap (firmware since 2026-10-20, always on).** Each thumb loop n <= min(Len, `kMaxLoop`),
+floor 1 (core `Cap()`; `MinN()` = min(`kMinLoop`, cap), so `kMinLoop` 2 applies whenever the cap
+is 2 or more and Len 1 gives n = 1). Applied at generation (default tables truncated, rolled
+lengths drawn from `MinN()..Cap()`, `FitMask`/`AllMask` limited to that range), at loop-length
+mutation (candidates above the cap excluded, none below 1) and immediately when Len is lowered
+(Len change regenerates, then `ApplyCap()` truncates live loops and theme copies, phase wrapped).
 The Solo anchor is chosen so the highest reachable degree (`key_hi + kOctaveHeadroom` = 15,
 via octave mutation) at the worst root stays at 70 semitones above C2 = 5.83 V.
 
@@ -196,7 +203,6 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
   `likembe_constants.h` format (`kStepWeight[kPartCount][5]`, `kThumbLStartMiddle`); a
   global-only value that differs between parts is printed as a per-part table with a note
   that the core needs a change for it.
-- **Loop cap: Off | Len** (lab prototype, not in firmware; default Off): each thumb loop n <= clamp(Len, 1, `kMaxLoop`) (cap floor 1: at Len 1 both loops are truncated to one element; `kMinLoop` 2 still applies uncapped) at generation, loop-length mutation and at once when Len drops or the cap is switched on (loop + theme truncated); shows `cap:Len`, exports a core-change note, flags Dump.
 - **Dump events:** N bars from Init with the voice's current parameters, in the parity format,
   headed by the equivalent `likembe_dump` arguments (flagged when lab values differ from firmware).
 

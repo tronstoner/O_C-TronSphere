@@ -45,6 +45,10 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 
 ## Decisions taken in the core
 
+- **Loop cap** (decided 2026-10-20, lab prototype promoted to firmware, always on): each thumb
+  loop n <= min(Len, `kMaxLoop`), floor 1 (`Cap()`, `MinN()`, `ApplyCap()`); at generation,
+  loop-length mutation and immediately on a Len decrease (loop + theme truncated, phase
+  wrapped). Lab engine identical (`loopCap` option removed); test `loop_cap`, parity incl. Len 1/2/3/5/7.
 - **Re-roll** = new seed (drawn from the passage stream) + new passage with *forced* new loop
   lengths under the policy + regenerated figures (new theme), applied immediately (decided
   2026-10-19; pulse position kept, phases restart at 0). `RerollNow()` is the same call.

@@ -38,6 +38,14 @@ done <<LIST
 --seed 7 --part 3 --len 24 --var 50 --pass 3 --bars 96
 --seed 8 --part 2 --len 32 --var 100 --pass 1 --bars 96
 --seed 10 --part 3 --len 32 --var 75 --pass 2 --bars 96
+--seed 11 --part 0 --len 1 --var 100 --pass 1 --bars 64
+--seed 12 --part 1 --len 2 --var 100 --pass 1 --bars 64
+--seed 13 --part 2 --len 3 --var 100 --pass 1 --bars 96
+--seed 14 --part 3 --len 5 --var 100 --pass 1 --bars 96
+--seed 15 --part 1 --len 3 --var 75 --pass 2 --bars 96
+--seed 16 --part 2 --len 5 --var 100 --pass 1 --bars 96
+--seed 17 --part 0 --len 7 --var 100 --pass 1 --bars 96
+--seed 18 --part 3 --len 2 --var 50 --pass 1 --bars 64
 --seed 11 --part 1 --len 7 --var 100 --pass 1 --bars 64
 --seed 12 --part 0 --len 2 --var 100 --pass 1 --bars 64
 --seed 13 --part 0 --len 1 --var 100 --pass 1 --bars 64

@@ -505,14 +505,50 @@ TEST(len_sweep) {
         bool good = c.pulse_idx == 0 && c.cycle_bars == LikembeCore::CycleBars(c.thumb[0].n, c.thumb[1].n, len)
                  && c.cycle_bar_idx >= 1 && c.cycle_bar_idx <= c.cycle_bars;
         for (int th = 0; th < 2; ++th)
-          good = good && c.thumb[th].n >= lk::kMinLoop && c.thumb[th].n <= lk::kMaxLoop && c.thumb[th].phase < c.thumb[th].n;
+          good = good && c.thumb[th].n >= c.MinN() && c.thumb[th].n <= c.Cap() && c.thumb[th].phase < c.thumb[th].n;
         uint16_t fit = 0;
-        for (uint8_t n = lk::kMinLoop; n <= lk::kMaxLoop; ++n) if (len % (2 * n) == 0) fit |= (uint16_t)(1u << n);
+        for (uint8_t n = c.MinN(); n <= c.Cap(); ++n) if (len % (2 * n) == 0) fit |= (uint16_t)(1u << n);
         if (lk::kParts[part].policy == lk::kPolicyFit && (fit & (fit - 1)))
           good = good && (fit & (1u << c.thumb[0].n)) && (fit & (1u << c.thumb[1].n));
         if (!good) { CHECK(good); std::printf("  len %d part %d bar %d\n", len, part, bar); Dump(c, "len"); break; }
       }
     }
+  return ok;
+}
+
+// Loop cap: every thumb loop (live and theme) n <= min(Len, kMaxLoop) at all
+// times; lowering Len mid-run truncates at once.
+TEST(loop_cap) {
+  bool ok = true;
+  static const uint8_t lens[] = {1, 2, 3, 5, 7, 16};
+  for (uint8_t len : lens)
+    for (uint8_t part = 0; part < lk::kPartCount; ++part) {
+      LikembeCore c = Make(part, (uint16_t)(500 + len * 7 + part), len);
+      c.params.variation_pct = 100; c.params.passage_idx = 1;
+      int cap = len < lk::kMaxLoop ? len : lk::kMaxLoop;
+      for (int bar = 0; bar <= 50; ++bar) {
+        bool good = true;
+        for (int th = 0; th < 2; ++th)
+          good = good && c.thumb[th].n >= 1 && c.thumb[th].n <= cap && c.theme[th].n <= cap && c.thumb[th].phase < c.thumb[th].n;
+        if (!good) { CHECK(good); std::printf("  len %d part %d bar %d\n", len, part, bar); Dump(c, "cap"); break; }
+        RunBar(c);
+      }
+    }
+  // Mid-run lowering: Len 16 -> 3 -> 1, mid-bar, immediate truncation.
+  for (uint8_t part = 0; part < lk::kPartCount; ++part) {
+    LikembeCore c = Make(part, 42, 16);
+    c.params.variation_pct = 100;
+    for (int i = 0; i < 16 * 5 + 7; ++i) c.Pulse();
+    static const uint8_t lower[] = {3, 1};
+    for (uint8_t len : lower) {
+      LikembeParams p = c.params; p.len = len; c.SetParams(p);
+      for (int th = 0; th < 2; ++th) {
+        CHECK(c.thumb[th].n <= len && c.theme[th].n <= len && c.thumb[th].phase < c.thumb[th].n);
+        for (int j = c.thumb[th].n; j < lk::kMaxLoop; ++j) CHECK(c.thumb[th].e[j].degree == 0 && c.thumb[th].e[j].draw == 0);
+      }
+      for (int i = 0; i < len * 3; ++i) c.Pulse();
+    }
+  }
   return ok;
 }
 
@@ -535,6 +571,7 @@ int main() {
   RUN(pulse_divider);
   RUN(cycle_bars_and_index);
   RUN(len_sweep);
+  RUN(loop_cap);
   { LikembeCore c = Make(lk::kPartLead, 1); Dump(c, "example lead"); }
   return g_fail ? 1 : 0;
 }

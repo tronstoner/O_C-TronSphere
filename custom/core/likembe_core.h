@@ -65,7 +65,7 @@ struct LikembeElement {
 };
 
 struct LikembeThumb {
-  uint8_t n;            // loop length in strokes (kMinLoop..kMaxLoop)
+  uint8_t n;            // loop length in strokes (kMinLoop..min(Len, kMaxLoop), 1 at Len 1)
   uint8_t phase;        // index of the element played on the bar's first stroke
   LikembeElement e[likembe::kMaxLoop];
 };
@@ -304,13 +304,26 @@ struct LikembeCore {
   // Len) -> every length counts as fit, so the policies always have a choice.
   uint16_t FitMask() const {
     uint16_t f = 0;
-    for (uint8_t n = likembe::kMinLoop; n <= likembe::kMaxLoop; ++n) if (IsFit(n)) f |= (uint16_t)(1u << n);
+    for (uint8_t n = MinN(); n <= Cap(); ++n) if (IsFit(n)) f |= (uint16_t)(1u << n);
     return (f & (f - 1)) ? f : AllMask();
   }
-  static uint16_t AllMask() {
+  uint16_t AllMask() const {
     uint16_t a = 0;
-    for (uint8_t n = likembe::kMinLoop; n <= likembe::kMaxLoop; ++n) a |= (uint16_t)(1u << n);
+    for (uint8_t n = MinN(); n <= Cap(); ++n) a |= (uint16_t)(1u << n);
     return a;
+  }
+  // Loop cap: every thumb loop n <= min(Len, kMaxLoop), floor 1. Below the cap
+  // kMinLoop still applies; a cap of 1 allows n = 1.
+  uint8_t Cap() const { return (uint8_t)ClampI(params.len, 1, likembe::kMaxLoop); }
+  uint8_t MinN() const { uint8_t c = Cap(); return c < likembe::kMinLoop ? c : likembe::kMinLoop; }
+  // Truncate live loops and theme copies to the cap, phase wrapped.
+  void ApplyCap() {
+    uint8_t cap = Cap();
+    LikembeThumb* ts[4] = {&thumb[0], &thumb[1], &theme[0], &theme[1]};
+    for (LikembeThumb* t : ts) if (t->n > cap) {
+      for (uint8_t j = cap; j < likembe::kMaxLoop; ++j) t->e[j] = {0, 0};
+      t->n = cap; t->phase = (uint8_t)(t->phase % cap);
+    }
   }
 
   void GenThumb(uint8_t th, uint8_t n) {
@@ -351,8 +364,9 @@ struct LikembeCore {
     // Default loop lengths at Len 16 / 12; any other Len rolls them under the
     // part policy from the lengths allowed for that Len (passage stream).
     const uint8_t* d = params.len == 16 ? Profile().loops16 : (params.len == 12 ? Profile().loops12 : nullptr);
-    if (d) { thumb[0].n = d[0]; thumb[1].n = d[1]; } else RollLoopLengths();
+    if (d) { uint8_t cap = Cap(); thumb[0].n = d[0] < cap ? d[0] : cap; thumb[1].n = d[1] < cap ? d[1] : cap; } else RollLoopLengths();
     GenPart();
+    ApplyCap();
     if (keep_pos) bar_in_passage = bip;
   }
 
@@ -375,7 +389,8 @@ struct LikembeCore {
         l = PickFromMask(rng_passage, all);
         r = PickFromMask(rng_passage, (uint16_t)(all & ~(1u << l)));
     }
-    thumb[0].n = l; thumb[1].n = r;
+    uint8_t cap = Cap();   // cap 1: second pick falls back to kMinLoop, truncate
+    thumb[0].n = l < cap ? l : cap; thumb[1].n = r < cap ? r : cap;
   }
 
   void NewPassage(bool force_loops) {
@@ -435,12 +450,12 @@ struct LikembeCore {
         uint16_t f = (uint16_t)(AllowedMask(other) & ~(1u << t.n) & ~(1u << other));
         if (!f) return;
         uint16_t up = 0, dn = 0;
-        for (uint8_t m = kMinLoop; m <= kMaxLoop; ++m) if (f & (1u << m)) { if (m > t.n) up |= (uint16_t)(1u << m); else dn |= (uint16_t)(1u << m); }
+        for (uint8_t m = 1; m <= kMaxLoop; ++m) if (f & (1u << m)) { if (m > t.n) up |= (uint16_t)(1u << m); else dn |= (uint16_t)(1u << m); }
         uint8_t np = 0;
         // JS: (up.length && (!dn.length || rng() < .5)) -- rng only drawn if both exist
         bool use_up = up && (!dn || (Next(rng_part) & 0x80000000u));
-        if (use_up) { for (uint8_t m = kMinLoop; m <= kMaxLoop; ++m) if (up & (1u << m)) { np = m; break; } }
-        else { for (uint8_t m = kMaxLoop; m >= kMinLoop; --m) if (dn & (1u << m)) { np = m; break; } }
+        if (use_up) { for (uint8_t m = 1; m <= kMaxLoop; ++m) if (up & (1u << m)) { np = m; break; } }
+        else { for (uint8_t m = kMaxLoop; m >= 1; --m) if (dn & (1u << m)) { np = m; break; } }
         while (t.n < np) {
           int i = KeyIndex(keys, c, t.e[t.n - 1].degree);
           int ni = ClampI(i + ((Next(rng_part) & 0x80000000u) ? 1 : -1), 0, c - 1);

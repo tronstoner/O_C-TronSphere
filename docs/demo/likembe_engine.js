@@ -42,12 +42,11 @@ const C = {
 // Lab-exposed constants. Per part (index = Part); stepW mirrors kStepWeight[kPartCount][5],
 // the others are one global in the firmware (export prints a global when all parts agree).
 // lStartMiddle mirrors kThumbLStartMiddle (thumb L starts at c / 2 instead of key 0).
-// loopCap: lab prototype, not in firmware -- each thumb loop n <= min(Len, kMaxLoop).
 function labDefaults() {
   const stepW = [[30, 70, 12, 8, 8], [20, 70, 12, 5, 10], [30, 70, 12, 8, 8], [30, 70, 12, 8, 8]];
   const part = p => ({stepW: stepW[p].slice(), mutW: [30, 20, 6, 5],
     ret: 30, loopChange: 40, headroom: 2});
-  return {parts: [part(0), part(1), part(2), part(3)], lStartMiddle: true, loopCap: false, accentV: 5, normalV: 3, gatePct: 50};
+  return {parts: [part(0), part(1), part(2), part(3)], lStartMiddle: true, accentV: 5, normalV: 3, gatePct: 50};
 }
 const cloneLab = l => JSON.parse(JSON.stringify(l));
 
@@ -111,9 +110,8 @@ class Core {
   // Lab constants change at the next bar line (like a firmware rebuild would, minus the reset).
   setLab(lab) {
     this.labPending = cloneLab(lab);
-    if (lab.loopCap && !this.lab.loopCap) { this.lab.loopCap = true; this.ApplyCap(); }   // cap on: truncate at once
   }
-  Cap() { return this.lab.loopCap ? clampI(this.params.len, 1, C.kMaxLoop) : C.kMaxLoop; }
+  Cap() { return clampI(this.params.len, 1, C.kMaxLoop); }   // loop cap: n <= min(Len, kMaxLoop)
   MinN() { return Math.min(C.kMinLoop, this.Cap()); }   // cap 1 allows n = 1
   AllMask() { let a = 0; for (let n = this.MinN(); n <= this.Cap(); ++n) a |= bit(n); return a >>> 0; }
   ApplyCap() {   // truncate live loops and theme copies to the cap, phase wrapped
