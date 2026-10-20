@@ -97,18 +97,20 @@ start when the internal clock starts. Few, musical values.
   is shown as is; the next encoder step snaps to the nearest list entry in that direction
   (`custom::StepIntMult` = `clock_mult::Step(m, dir, kIntMultLo)`).
 - **One multiplier list everywhere** (decided 2026-10-20): `custom/core/clock_mult_list.h`,
-  `custom::clock_mult::kList`, ClockManager terms 0, −3, −2, −1, 1..8, 12:
+  `custom::clock_mult::kList`, 23 entries, ClockManager terms 0, −31, −23, −15, −11, −7..−1, 1..8, 12, 16, 24
+  (list widened 2026-10-20):
 
-  | Shown | off | /4 | /3 | /2 | x1 | x2 | x3 | x4 | x5 | x6 | x7 | x8 | x12 |
-  |---|---|---|---|---|---|---|---|---|---|---|---|---|---|
+  | Shown | off | /32 | /24 | /16 | /12 | /8 | /7 | /6 | /5 | /4 | /3 | /2 | x1 | x2 | x3 | x4 | x5 | x6 | x7 | x8 | x12 | x16 | x24 |
+  |---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|---|
 
   ClockSetup (`ClockSetup.h`, edited under `CUSTOM_BUILD`, `docs/UPSTREAM.md`) steps a slot
   multiplier through the same list with **both** encoders: right encoder and left encoder
   each move one entry per detent (upstream: right ±1 over −31..24, left doubling/halving).
-  Ends clamp (off, x12). `Step()` snaps off-list values. Label helper
+  Ends clamp (off, x24). Every label is at most 3 characters (`/32`, `x24`; ClockSetup column verified in the sim screenshot `clocksetup_mult_d32.png`). `Step()` snaps off-list values. Label helper
   `clock_mult::Label()` (our own; ClockSetup's display code is inline `gfxPrint` and not
-  reusable, its display is unchanged and renders the same notation). `Src TRn` Div uses the
-  x side of the list as pulse counts: `1 2 3 4 5 6 7 8 12` (`kTrDivs`).
+  reusable, its display is unchanged and renders the same notation). `Src Int` Div offers the
+  22 entries without off. `Src TRn` Div uses division notation `/1 /2 /3 /4 /5 /6 /7 /8 /12 /16 /24 /32`
+  (`kTrDivs`, 12 entries, `/1` = one step per pulse; `clock_mult::DivLabel()`, `/1` special-cased there).
 - **The applet writes to ClockSetup.** On load (`Start()`, after `OnDataReceive`) and when
   `Src` is switched to `Int`: if the slot multiplier is 0 (off), the applet sets x4
   (`kDefaultIntMult`). The value is persisted by ClockSetup (its `OnDataRequest`, 6 bits per
@@ -117,7 +119,7 @@ start when the internal clock starts. Few, musical values.
   until the slot is set again — not observed in the sim, check on hardware).
 - **`Src TRn`** = the physical jack. `Src TRn`, `Roll TRn`, `Rst TRn` read the rising edge
   of `HS::frame.gate_high[n-1]` (raw level, `HemisphereApplet.cpp:87-90`), edge state kept in
-  the applet. **`Div`** = jack pulses per engine step from `kTrDivs` = 1 2 3 4 5 6 7 8 12 (the x side of the shared list)
+  the applet. **`Div`** = jack pulses per engine step from `kTrDivs`, shown `/1 /2 /3 /4 /5 /6 /7 /8 /12 /16 /24 /32`
   (index persisted, default 1; decrement counter `custom::PulseDivider`, fires on the first
   pulse after a reset).
 - **Roll / Rst inputs per applet**: an applet may offer its own trigger inputs for actions

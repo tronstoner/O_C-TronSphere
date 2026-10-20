@@ -30,8 +30,8 @@ const C = {
   // custom/core/clock_mult_list.h, off excluded on the applet,
   // ClockManager terms: >0 = xN, <0 = /(1-N)), Src TRn Div = kTrDivs, RollIn, RstIn
   kSrcInt: 0, kSrcTr1: 1, kSrcCount: 5,
-  kMultList: [0, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 12], kDefaultIntMult: 4,
-  kTrDivs: [1, 2, 3, 4, 5, 6, 7, 8, 12], kDefaultTrDivIdx: 0,
+  kMultList: [0, -31, -23, -15, -11, -7, -6, -5, -4, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24], kDefaultIntMult: 4,
+  kTrDivs: [1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24, 32], kDefaultTrDivIdx: 0,
   kRollOff: 0, kRollTr1: 1, kRollCount: 5, kDefaultRoll: 2,
   kRstOff: 0, kRstTr1: 1, kRstCount: 5, kDefaultRst: 0,
   kDefaultPulseTicks: 2083, kTickHz: 16666,   // gate length % = lab.gatePct (kGateLengthPct)
@@ -398,6 +398,8 @@ function clockDefaults() {
 function clockTrDiv(c) { return C.kTrDivs[c.div_tr_idx] || 1; }
 // ClockSetup notation: x4, /2, off.
 function formatMult(m) { return m === 0 ? 'off' : m > 0 ? `x${m}` : `/${1 - m}`; }
+// clock_mult::DivLabel: Src TRn Div as "/n" ("/1" = every pulse).
+function formatDiv(n) { return `/${n}`; }
 // PulseDivider::Tick, 1:1: fires on the first pulse after reset (left = 0), then
 // every div pulses; a div lowered below the remaining count fires on the next pulse.
 function pulseDividerTick(d, div) {   // d = {left}
@@ -407,6 +409,6 @@ function pulseDividerTick(d, div) {   // d = {left}
   return fire;
 }
 
-const E = {C, Core, labDefaults, cloneLab, defaults, clampParams, dump, clockDefaults, clockTrDiv, formatMult, pulseDividerTick};
+const E = {C, Core, labDefaults, cloneLab, defaults, clampParams, dump, clockDefaults, clockTrDiv, formatMult, formatDiv, pulseDividerTick};
 if (typeof module !== 'undefined' && module.exports) module.exports = E; else root.LikembeEngine = E;
 })(typeof window !== 'undefined' ? window : this);

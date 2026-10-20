@@ -69,10 +69,13 @@ scenarios() {
   # Clock page Div x4 -> x2 via the applet encoder writes slot 1: 4 steps/s.
   run "likembe_int_div_from_applet" $LK --encoder 7 --press --encoder 1 --press --encoder -2 --press \
       --int-bpm 120 --segment --int-start --seconds 1.99 --expect-rises 0 8 --expect-state "mult=x2,off"
-  # Src TR1, Div 3 (Clock page: Src TR1, Div 3): 7 TR1 pulses -> steps on pulses 1, 4, 7.
+  # Src TR1, Div /3 (Clock page: Src TR1, Div /3): 7 TR1 pulses -> steps on pulses 1, 4, 7.
   run "likembe_src_tr1_div3" $LK --encoder 7 --press --press --encoder 1 --press --encoder 1 --press \
       --encoder 2 --press --segment --trig 1@0.1 --trig 1@0.2 --trig 1@0.3 --trig 1@0.4 \
-      --trig 1@0.5 --trig 1@0.6 --trig 1@0.7 --seconds 1 --expect-rises 0 3
+      --trig 1@0.5 --trig 1@0.6 --trig 1@0.7 --seconds 1 --expect-rises 0 3 --png likembe_div_tr1_d3.png
+  # Clock page Div x4 -> x24 (7 steps, 8th clamps) on Src Int writes slot 1.
+  run "likembe_int_div_x24" $LK --encoder 7 --press --encoder 1 --press --encoder 8 --press \
+      --seconds 0.1 --png likembe_div_x24.png --expect-state "mult=x24,off"
   # Src TR1 = physical jack: internal clock runs with x4 on TR1's slot, yet only the
   # scripted TR1 pulses (every 500 ms) step the engine.
   run "likembe_src_tr1_jack_override" $LK --encoder 7 --press --press --encoder 1 --press \
@@ -91,20 +94,22 @@ scenarios() {
       --seconds 1.1 --expect-bpm 149..151 --segment --seconds 1.9 --expect-rises 0 18..20
   # ClockSetup screen via the panel keys (Up+Down gesture, real ClockSetup UI):
   # cursor Play -> Tempo, edit, 120 -> 100; cursor -> slot 1 multiplier, off -> x3
-  # (6 steps through the shared list off /4 /3 /2 x1 x2 x3, docs/CLOCK.md);
+  # (14 steps through the shared list off /32 /24 ... /2 x1 x2 x3, docs/CLOCK.md);
   # cursor -> trigger map row; Up click closes. PNGs in host/build/out/clocksetup_*.png.
   J20="j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j,j"
   # Shots are taken right after the keys: ClockSetup leaves edit mode on its own after a while.
   run "clocksetup_screen" --quiet --keys "down:q,down:e,up:q,up:e" --seconds 0.2 \
-      --keys "l,k,$J20" --png clocksetup_tempo.png --keys "k,l,l,l,k,l,l,l,l,l,l" --png clocksetup_mult.png \
+      --keys "l,k,$J20" --png clocksetup_tempo.png --keys "k,l,l,l,k,l,l,l,l,l,l,l,l,l,l,l,l,l,l" --png clocksetup_mult.png \
       --keys "k,l,l,l,l" --png clocksetup_trigmap.png --keys "q" --seconds 0.1 \
       --expect-bpm 100 --expect-state "mult=x3,"
-  # Shared multiplier list in ClockSetup: slot 1 from off, right encoder 13 steps up
-  # (off /4 /3 /2 x1..x8 x12, clamps at x12), left encoder 13 steps back down to off.
-  L13="l,l,l,l,l,l,l,l,l,l,l,l,l"; A13="a,a,a,a,a,a,a,a,a,a,a,a,a"
+  # Shared multiplier list in ClockSetup: slot 1 from off, right encoder 1 step -> /32
+  # (screenshot), 21 more -> x24, one more clamps at x24 (off /32 /24 /16 /12 /8../2
+  # x1..x8 x12 x16 x24), left encoder 23 steps back down to off.
+  L21="l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l,l"; A23="a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a,a"
   run "clocksetup_mult_list" --quiet --keys "down:q,down:e,up:q,up:e" --seconds 0.2 \
-      --keys "l,l,l,l,k,$L13" --png clocksetup_mult_x12.png --expect-state "mult=x12," \
-      --keys "$A13" --expect-state "mult=off,"
+      --keys "l,l,l,l,k,l" --png clocksetup_mult_d32.png --expect-state "mult=/32," \
+      --keys "$L21" --expect-state "mult=x24," --keys "l" --png clocksetup_mult_x24.png \
+      --expect-state "mult=x24," --keys "$A23" --expect-state "mult=off,"
   [ "$fail" = 0 ] && echo "SIM SCENARIOS OK" || { echo "SIM SCENARIOS FAILED"; exit 1; }
 }
 

@@ -175,7 +175,7 @@ function syncVoiceUI(v){
   const kind = isInt ? 'int' : 'tr';
   if (divIn.dataset.kind !== kind) {   // option list follows Src
     divIn.dataset.kind = kind;
-    divIn.innerHTML = isInt ? multOptions() : K.kTrDivs.map((d, i) => `<option value="${i}">${d}</option>`).join('');
+    divIn.innerHTML = isInt ? multOptions() : K.kTrDivs.map((d, i) => `<option value="${i}">${E.formatDiv(d)}</option>`).join('');
   }
   V.el.querySelectorAll('[data-c]').forEach(inp => {
     if (document.activeElement !== inp) inp.value = String(inp.dataset.c === 'div' ? (isInt ? clockS.mult[v] : c.div_tr_idx) : c[inp.dataset.c]);

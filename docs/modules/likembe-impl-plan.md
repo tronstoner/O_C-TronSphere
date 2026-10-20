@@ -162,6 +162,11 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
   `CUSTOM_BUILD`: both encoders step a slot multiplier through the list (`docs/UPSTREAM.md`).
   Applet Src Int Div = `Step(m, dir, kIntMultLo)` (off excluded); `Div` value at x 34 like
   the other rows. Src TRn `kTrDivs` = 1..8, 12 (16 dropped). Lab: same list, no note names.
+- 2026-10-20 (user decision): list widened to off /32 /24 /16 /12 /8../2 x1..x8 x12 x16 x24
+  (23 entries; Src Int 22 without off). Src TRn `kTrDivs` = 1..8, 12, 16, 24, 32 shown `/n`
+  via `clock_mult::DivLabel` (`/1` special case); indices 0..8 unchanged, so old presets keep
+  their Div. Lab: same lists, TR Div `/n` (`formatDiv`). Sim: `clocksetup_mult_list` (/32 shot,
+  22 steps to x24, clamp, back to off), new `likembe_int_div_x24`, `clocksetup_screen` 14 steps to x3.
 - Tests: `clock_pack_unpack` (incl. `clock_mult::Step/IndexOf/Label`, `StepIntMult`), `pulse_divider` (host); sim scenarios `likembe_int_both_sides`,
   `likembe_int_stopped_tr1_ignored`, `likembe_int_div_from_clocksetup`, `likembe_int_div_from_applet`,
   `likembe_src_tr1_div3`, `likembe_src_tr1_jack_override`, `likembe_rst_clockstart`,

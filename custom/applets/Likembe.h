@@ -223,8 +223,8 @@ private:
     using namespace custom::likembe;
     switch (row) {
       case kPgSrc:  gfxPrint(clk.src == kSrcInt ? "Int" : InName(clk.src)); break;
-      case kPgDiv: {   // Int: slot multiplier in ClockSetup notation ("x4"); TRn: "3"
-        if (clk.src != kSrcInt) { gfxPrint(clk.TrDiv()); break; }
+      case kPgDiv: {   // Int: slot multiplier in ClockSetup notation ("x4"); TRn: "/3"
+        if (clk.src != kSrcInt) { char t[6]; gfxPrint(custom::clock_mult::DivLabel(clk.TrDiv(), t)); break; }
         char b[6];
         gfxPrint(custom::clock_mult::Label(HS::clock_m.GetMultiply(io_offset), b));
         break;

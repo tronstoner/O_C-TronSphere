@@ -103,6 +103,9 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   under `CUSTOM_BUILD`: both encoders step a slot multiplier through the list. Applet Src Int
   Div steps the same list without off; ClockSetup notation only, note names removed (applet
   and lab). Src TRn Div = 1..8, 12. `custom_min` 99,788 B flash / 20,824 B RAM (-264 B / 0 B).
+  2026-10-20 (host + sim-verified, not hardware): list widened to off /32 /24 /16 /12 /8../2
+  x1..x8 x12 x16 x24 (ClockSetup and Src Int Div); Src TRn Div /1../8 /12 /16 /24 /32 in
+  division notation. `custom_min` 99,820 B flash / 20,824 B RAM (+32 B / 0 B).
 - Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 18 combinations incl. Len 1/2/7/12/16/24/32). `Len` range is 1..32 (Len 1 allowed 2026-10-20; offset parts silent there).
 
 ### Open decisions
@@ -134,4 +137,5 @@ Hello hardware check (Phase 1 remainder) can be done with the same flash.
 | 2026-10-20 | TRn in applet clock settings = physical jack, not ClockSetup-routed | `Src`/`Roll`/`Rst TRn` read rising edges of `frame.gate_high[n-1]`; `Int` is the only routed source; `Rst Int` dropped (clock start restarts anyway) |
 | 2026-10-20 | Clock page model: applets step once per pulse; `Src Int` = upstream routing (`Clock(0)`), `Src TRn` = `frame.clocked[n-1]` + pulse counter only (TRn superseded by the physical-jack row above); Roll/Rst trigger inputs per applet; applet-drawn sub-page with `Back` row | No tempo logic in applets; one place (ClockSetup) owns tempo/multipliers. Details `docs/CLOCK.md` |
 | 2026-10-20 | Real `ClockSetup`/`HS::clock_m` compiled into the host sim | `Src Int` / `Rst Int` / external sync become host-testable without stubbing clock behaviour |
+| 2026-10-20 | Multiplier list widened to off /32 /24 /16 /12 /8../2 x1..x8 x12 x16 x24; Src TRn Div shown /1../32 | Wider range in both places, same notation for TR division. Details `docs/CLOCK.md` 2 |
 | 2026-10-20 | One multiplier list in ClockSetup and applet; ClockSetup.h edited under CUSTOM_BUILD | Same values and steps in both places, encoders step the list (off /4 /3 /2 x1..x8 x12), no note names. Details `docs/CLOCK.md` 2, `docs/UPSTREAM.md` |

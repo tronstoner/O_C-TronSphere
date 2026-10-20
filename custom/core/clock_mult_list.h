@@ -9,7 +9,9 @@
 namespace custom {
 namespace clock_mult {
 
-constexpr int8_t kList[] = {0, -3, -2, -1, 1, 2, 3, 4, 5, 6, 7, 8, 12};  // off /4 /3 /2 x1..x8 x12
+// off /32 /24 /16 /12 /8 /7 /6 /5 /4 /3 /2 x1..x8 x12 x16 x24 (23 entries)
+constexpr int8_t kList[] = {0, -31, -23, -15, -11, -7, -6, -5, -4, -3, -2, -1,
+                            1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24};
 constexpr int Count() { return (int)(sizeof(kList) / sizeof(kList[0])); }
 constexpr int8_t At(int i) { return kList[i < 0 ? 0 : (i >= Count() ? Count() - 1 : i)]; }
 
@@ -19,7 +21,7 @@ constexpr int IndexOf(int value) {
   return -1;
 }
 
-// Sort key: the list is ascending in rate with off below /4.
+// Sort key: the list is ascending in rate with off below /32.
 constexpr int Key(int v) { return v == 0 ? -128 : v; }
 
 // Next list entry in direction dir (sign only), clamped at the ends. A value not in
@@ -53,6 +55,13 @@ inline const char* Label(int m, char* buf) {
   buf[n++] = (char)('0' + v % 10);
   buf[n] = 0;
   return buf;
+}
+
+// Division notation "/n" for a pulse divider n >= 1 (Likembe Src TRn Div): "/1".."/32".
+// "/1" has no ClockManager value (x1 = 1), hence the special case here.
+inline const char* DivLabel(int n, char* buf) {
+  if (n <= 1) { buf[0] = '/'; buf[1] = '1'; buf[2] = 0; return buf; }
+  return Label(1 - n, buf);
 }
 
 }  // namespace clock_mult

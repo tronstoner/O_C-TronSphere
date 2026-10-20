@@ -107,10 +107,10 @@ enum ClockSrc : uint8_t { kSrcInt = 0, kSrcTr1, kSrcTr2, kSrcTr3, kSrcTr4, kSrcC
 // steps through the shared list custom::clock_mult::kList (custom/core/clock_mult_list.h,
 // same list as ClockSetup) excluding off, and writes HS::clock_m.SetMultiply();
 // ClockSetup persists it. Off-list values (old presets) snap on the next step.
-constexpr int kIntMultLo = 1;                 // list index of /4: off is not selectable here
+constexpr int kIntMultLo = 1;                 // list index of /32: off is not selectable here
 constexpr int8_t kDefaultIntMult = 4;         // x4, set when the slot is off
 // Src TRn Div: jack pulses per engine step (decrement counter), index into this list.
-constexpr uint8_t kTrDivs[] = {1, 2, 3, 4, 5, 6, 7, 8, 12};   // = the x side of clock_mult::kList
+constexpr uint8_t kTrDivs[] = {1, 2, 3, 4, 5, 6, 7, 8, 12, 16, 24, 32};  // shown /1../32 (clock_mult::DivLabel)
 constexpr uint8_t kTrDivCount = sizeof(kTrDivs);
 constexpr uint8_t kDefaultTrDivIdx = 0;       // Div 1
 // Roll: trigger input (physical jack) for an immediate re-roll. Same default on both sides.
