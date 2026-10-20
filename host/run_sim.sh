@@ -61,9 +61,18 @@ scenarios() {
   run "likembe_src_tr1_div3" $LK --encoder 7 --press --press --encoder 1 --press --encoder 1 --press \
       --encoder 2 --press --segment --trig 1@0.1 --trig 1@0.2 --trig 1@0.3 --trig 1@0.4 \
       --trig 1@0.5 --trig 1@0.6 --trig 1@0.7 --seconds 1 --expect-rises 0 3
-  # Rst Int: start mid-run, stop, start again -> the second run replays the first from bar start.
-  run "likembe_rst_int" $LK --int-bpm 120 --mult 1:x4 --segment --int-start --seconds 1.3 --int-stop \
+  # Src TR1 = physical jack: internal clock runs with x4 on TR1's slot, yet only the
+  # scripted TR1 pulses (every 500 ms) step the engine.
+  run "likembe_src_tr1_jack_override" $LK --encoder 7 --press --press --encoder 1 --press \
+      --int-bpm 120 --mult 1:x4 --int-start --segment --trig 1@0.25 --trig 1@0.75 --trig 1@1.25 \
+      --trig 1@1.75 --seconds 2 --expect-rises 0 4
+  # Clock start always restarts (Rst Off): start, stop, start -> second run replays the first.
+  run "likembe_rst_clockstart" $LK --int-bpm 120 --mult 1:x4 --segment --int-start --seconds 1.3 --int-stop \
       --seconds 0.5 --expect-rises 0 11 --segment --int-start --seconds 1.3 --expect-same 0 1 2 10
+  # Rst TR2 (Roll Off): a TR2 pulse mid-run restarts at bar start -> replays the first run.
+  run "likembe_rst_tr2" $LK --encoder 7 --press --encoder 2 --press --encoder -2 --press --encoder 1 \
+      --press --encoder 2 --press --int-bpm 120 --mult 1:x4 --segment --int-start --seconds 1.3 \
+      --expect-rises 0 11 --segment --trig 2@1.3 --seconds 1.3 --expect-same 0 1 2 10
   # External sync: armed internal clock follows TR1 at 150 BPM, PPQN 4; x2 -> 5 steps/s.
   run "likembe_ext_sync_tr1" $LK --clock 150:4 --int-bpm 120 --ppqn 4 --mult 1:x2 --int-arm \
       --seconds 1.1 --expect-bpm 149..151 --segment --seconds 1.9 --expect-rises 0 9

@@ -124,7 +124,9 @@ per engine step.
 |---|---|
 | `likembe_src_int_x4` | Src Int, internal clock 120 BPM, x4 on slot 1: 0 steps in 0.5 s before start, 16 steps in 1.99 s after `--int-start` |
 | `likembe_src_tr1_div3` | Clock page Src TR1, Div 3; 7 scripted TR1 pulses → 3 steps (pulses 1, 4, 7) |
-| `likembe_rst_int` | Rst Int: run 1.3 s (11 steps), stop, start again → the first 10 steps repeat the first run exactly (bar start, same pitches/velocities) |
+| `likembe_src_tr1_jack_override` | Src TR1, internal clock running at 120 BPM with x4 on slot 1, scripted TR1 pulses every 500 ms → exactly 4 steps in 2 s (physical jack, internal clock ignored) |
+| `likembe_rst_clockstart` | Rst Off: run 1.3 s (11 steps), stop, start again → the first 10 steps repeat the first run exactly (clock start restarts at bar start) |
+| `likembe_rst_tr2` | Rst TR2, Roll Off: run 1.3 s (11 steps), one TR2 pulse → the next 10 steps repeat the first run exactly |
 | `likembe_ext_sync_tr1` | armed clock at 120 BPM, TR1 pulses at 150 BPM x 4 PPQN: starts on TR1, tempo 149..151 BPM, x2 → 9 steps in 1.9 s |
 
 ### Clock source and triggers

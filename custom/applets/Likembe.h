@@ -6,8 +6,9 @@
 //
 // Clock page (main row "Clock >"; settings in custom/core/likembe_clock.h, rules
 // in docs/CLOCK.md): Src Int = Clock(0) as upstream routes it, one step per
-// pulse; Src TRn = HS::frame.clocked[n-1] divided by Div (counter only). Roll
-// TRn = immediate re-roll, Rst = restart at bar start (Int = ClockSetup start).
+// pulse; Src TRn = physical jack n (rising edge of HS::frame.gate_high[n-1],
+// ClockSetup never affects it) divided by Div. Roll TRn = immediate re-roll,
+// Rst TRn = restart at bar start. Clock start restarts via upstream Reset().
 // CV1 density mod (+-3 V = +-kDensityCvRange %), Out A velocity gate per note, Out B pitch.
 #pragma once
 #include "custom/core/likembe_core.h"
@@ -35,13 +36,13 @@ public:
     if (gate_ticks && --gate_ticks == 0) Out(0, 0);
     // CV1 -> density offset (integer, constant divisor).
     core.SetDensityMod((int8_t)(In(0) * kDensityCvRange / HEMISPHERE_3V_CV));
-    if (clk.roll_in != kRollOff && HS::frame.clocked[clk.roll_in - kRollTr1]) core.Reroll();
-    const bool running = HS::clock_m.IsRunning();
-    bool rst = false;
-    if (clk.rst_in == kRstInt) rst = running && !was_running;
-    else if (clk.rst_in >= kRstTr1) rst = HS::frame.clocked[clk.rst_in - kRstTr1];
-    was_running = running;
-    if (rst) Reset();
+    // Physical jack rising edges (TR1..TR4 as bits), independent of ClockSetup.
+    uint8_t level = 0;
+    for (int i = 0; i < 4; ++i) level |= (uint8_t)(HS::frame.gate_high[i] ? 1 << i : 0);
+    jack_rise = level & ~jack_level;
+    jack_level = level;
+    if (clk.roll_in != kRollOff && JackRose(clk.roll_in)) core.Reroll();
+    if (clk.rst_in != kRstOff && JackRose(clk.rst_in)) Reset();
     if (StepPulse()) {
       if (have_pulse) pulse_ticks = since_pulse;   // already clamped to kMaxPulseTicks
       have_pulse = true;
@@ -174,7 +175,8 @@ private:
   int cursor = 0;
   bool page = false;          // Clock page shown
   int page_cursor = 0;
-  bool was_running = false;   // HS::clock_m.IsRunning() last tick (Rst Int edge)
+  uint8_t jack_level = 0;     // TR1..TR4 levels last tick (bits), for edges
+  uint8_t jack_rise = 0;      // TR1..TR4 rising edges this tick (bits)
   int pitch = 0;
   uint32_t since_pulse = 0;   // ticks since last pulse clock, clamped
   uint32_t pulse_ticks = custom::likembe::kDefaultPulseTicks;   // measured interval
@@ -188,11 +190,12 @@ private:
   void LeavePage() { page = false; cursor = kCurClock; ResetCursor(); }
 
   // Engine step: Src Int = Clock(0) (upstream routing), one step per pulse;
-  // Src TRn = frame.clocked[n-1], one step every Div pulses.
+  // Src TRn = rising edge of physical jack n, one step every Div pulses.
+  bool JackRose(uint8_t tr) const { return (jack_rise >> ((tr - 1) & 3)) & 1; }   // tr 1..4
   bool StepPulse() {
     using namespace custom::likembe;
     if (clk.src == kSrcInt) return Clock(0);
-    return HS::frame.clocked[clk.src - kSrcTr1] && divider.Tick(clk.div);
+    return JackRose(clk.src) && divider.Tick(clk.div);
   }
 
   // Formatting for the Clock page values (one place).
@@ -207,10 +210,7 @@ private:
       case kPgDiv:  if (clk.src == kSrcInt) gfxPrint("-"); else { gfxPrint("/"); gfxPrint(clk.div); } break;
       case kPgRoll: gfxPrint(clk.roll_in == kRollOff ? "Off" : InName(clk.roll_in)); break;
       case kPgRst:
-        if (clk.rst_in == kRstOff) gfxPrint("Off");
-        else if (clk.rst_in == kRstInt) gfxPrint("Int");
-        else gfxPrint(InName(clk.rst_in - kRstTr1 + 1));
-        break;
+        gfxPrint(clk.rst_in == kRstOff ? "Off" : InName(clk.rst_in)); break;
     }
   }
 

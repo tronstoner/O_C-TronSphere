@@ -369,7 +369,7 @@ TEST(clock_pack_unpack) {
   bool ok = true;
   using custom::LikembeClock;
   LikembeClock dl = LikembeClock::Defaults(false), dr = LikembeClock::Defaults(true);
-  CHECK(dl.src == lk::kSrcInt && dl.div == 1 && dl.roll_in == lk::kRollTr2 && dl.rst_in == lk::kRstInt);
+  CHECK(dl.src == lk::kSrcInt && dl.div == 1 && dl.roll_in == lk::kRollTr2 && dl.rst_in == lk::kRstOff);
   CHECK(dr.roll_in == lk::kRollTr4);
   LikembeClock c{lk::kSrcTr3, 24, lk::kRollOff, lk::kRstTr4};
   uint64_t d = c.Pack();
@@ -378,9 +378,12 @@ TEST(clock_pack_unpack) {
   CHECK(u.src == c.src && u.div == 24 && u.roll_in == c.roll_in && u.rst_in == c.rst_in);
   for (int v = lk::kClockDivMin; v <= lk::kClockDivMax; ++v) { c.div = (uint8_t)v; CHECK(LikembeClock::Unpack(c.Pack(), true).div == v); }
   LikembeClock g = LikembeClock::Unpack(~0ull, true);
-  CHECK(g.src == lk::kSrcInt && g.div == lk::kClockDivMax && g.roll_in == lk::kRollTr4 && g.rst_in == lk::kRstInt);
+  CHECK(g.src == lk::kSrcInt && g.div == lk::kClockDivMax && g.roll_in == lk::kRollTr4 && g.rst_in == lk::kRstOff);
   g = LikembeClock::Unpack(~0ull, false);
   CHECK(g.roll_in == lk::kRollTr2);
+  for (int t = lk::kRstTr1; t <= lk::kRstTr4; ++t) { c.rst_in = (uint8_t)t; CHECK(LikembeClock::Unpack(c.Pack(), false).rst_in == t); }
+  CHECK(LikembeClock::Unpack(1ull << 59, false).rst_in == lk::kRstOff);   // former Int -> Off
+  CHECK(((LikembeClock{lk::kSrcInt, 1, lk::kRollOff, lk::kRstTr1}.Pack() >> 59) & 7) == 2);   // TR1 keeps old code
   g = LikembeClock::Unpack(0, false);
   CHECK(g.src == lk::kSrcInt && g.div == 1 && g.roll_in == lk::kRollOff && g.rst_in == lk::kRstOff);
   // core + clock share one uint64 without overlap

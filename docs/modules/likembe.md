@@ -23,7 +23,7 @@ this module.
 
 | Jack | Function |
 |---|---|
-| TR1 | Clock, with Clock page `Src` = `Int` (default): `Clock(0)` as upstream routes it, one engine step per pulse; `Len` steps make one bar. `Src` = `TR1..TR4` takes `frame.clocked[n-1]` instead, one step every `Div` pulses |
+| TR1 | Clock, with Clock page `Src` = `Int` (default): `Clock(0)` as upstream routes it, one engine step per pulse; `Len` steps make one bar. `Src` = `TR1..TR4` takes the physical jack instead (rising edge of `frame.gate_high[n-1]`, ClockSetup has no effect), one step every `Div` pulses |
 | TR2 | Re-roll (Clock page `Roll`, default = this hemisphere's 2nd input): new seed + new passage, applied **immediately** (pulse position kept, phases restart at 0, passage counter restarts). `Rst` may use any TR as restart input |
 | CV1 | Density modulation, bipolar: ±3 V (`HEMISPHERE_3V_CV`) = ±35 percent points (`kDensityCvRange`), added to Density, effective value clamped to 0..100 %; read every tick (one multiply/divide by constant) |
 | CV2 | Unassigned (open question) |
@@ -35,12 +35,10 @@ Tempo and note value come from upstream (ClockSetup multiplier per input, or the
 map with its div/mult); the applet only counts pulses. Rules and upstream details:
 `docs/CLOCK.md`.
 
-**`Src` / `Div` finding** (`IOFrame::Load()`, `docs/CLOCK.md` 1.2): `frame.clocked[0..3]` is
-computed once per tick for all four input slots; while the internal clock runs and the
-slot's multiplier is non-zero it holds the internal tock, otherwise the trigger map's
-`Clock()`, plus boops, after the input skip. So `TRn` follows what slot n delivers (TRn
-under the default map), not necessarily the raw jack n; `Roll TRn` and `Rst TRn` read the
-same `frame.clocked[n-1]`.
+**`TRn` = physical jack** (decided 2026-10-20, `docs/CLOCK.md` 2): `Src TRn`, `Roll TRn`,
+`Rst TRn` use the rising edge of `HS::frame.gate_high[n-1]` (raw jack level,
+`HemisphereApplet.cpp:87-90`; previous levels kept in the applet as 4 bits). The routed
+`frame.clocked[]` (trigger map, internal clock multipliers) is used only by `Src Int`.
 
 ## Controls
 
@@ -71,16 +69,15 @@ row, the other hemisphere's button (`AuxButton`) cancels the edit and also retur
 
 | Row | Function | Values | Default | Takes effect |
 |---|---|---|---|---|
-| `Src` | Step clock source | `Int` (= `Clock(0)`, upstream routing), `TR1`..`TR4` (= `frame.clocked[n-1]`) | `Int` (`kSrcInt`) | next tick; changing it re-arms the divider |
+| `Src` | Step clock source | `Int` (= `Clock(0)`, upstream routing), `TR1`..`TR4` (= physical jack, rising edge of `frame.gate_high[n-1]`) | `Int` (`kSrcInt`) | next tick; changing it re-arms the divider |
 | `Div` | Pulses per step, with `Src` = TRn only; shown `/3`; with `Int` shown `-` and not editable (push ignored) | 1–24 (`kClockDivMin`..`kClockDivMax`) | 1 (`kDefaultClockDiv`) | next pulse: decrement counter, fires on the first pulse after a reset; a Div lowered below the pulses still pending fires on the next pulse |
-| `Roll` | Re-roll trigger input (immediate re-roll; the main-list `Roll` bars setting is separate) | `Off`, `TR1`..`TR4` | own 2nd input: `TR2` left, `TR4` right (`kDefaultRollLeft`/`Right`) | next tick |
-| `Rst` | Restart input: `Reset()` = bar start, phases 0, figures kept, divider re-armed | `Off`, `Int` (ClockSetup start = rising edge of `HS::clock_m.IsRunning()`), `TR1`..`TR4` | `Int` (`kDefaultRst`) | next tick |
+| `Roll` | Re-roll trigger input, physical jack (immediate re-roll; the main-list `Roll` bars setting is separate) | `Off`, `TR1`..`TR4` | own 2nd input: `TR2` left, `TR4` right (`kDefaultRollLeft`/`Right`) | next tick |
+| `Rst` | Restart trigger input, physical jack: `Reset()` = bar start, phases 0, figures kept, divider re-armed | `Off`, `TR1`..`TR4` | `Off` (`kDefaultRst`) | next tick |
 | `Back` | Return to the main list | — | — | — |
 
-Roll and Rst on the same input both fire (re-roll first, then restart). Note: upstream
-already calls `Reset()` on every applet when the clock starts (auto_reset,
-`docs/CLOCK.md` 1.2), so `Rst Off` does not suppress the restart on a ClockSetup start;
-`Rst Int` adds nothing beyond it in the Hemisphere app.
+Roll and Rst on the same input both fire (re-roll first, then restart). Clock start always
+restarts the sequence (upstream auto_reset calls `Reset()` on every applet, `docs/CLOCK.md`
+1.2); `Rst` adds a trigger input for restarts.
 
 Element 0 of each thumb never rests, so at 0 % density each thumb plays only its first element, once per pass through its loop.
 
@@ -146,7 +143,7 @@ page (`LikembeClock::Pack()`/`Unpack()`, `likembe_clock.h`) at bits 48–61.
 | 48–50 | src (0 Int, 1–4 TR1–TR4) | 5–7 → Int |
 | 51–55 | div − 1 (0..23 = Div 1..24) | 24–31 clamp to 24 |
 | 56–58 | roll_in (0 Off, 1–4 TR1–TR4) | 5–7 → hemisphere default (TR2 / TR4) |
-| 59–61 | rst_in (0 Off, 1 Int, 2–5 TR1–TR4) | 6, 7 → Int |
+| 59–61 | rst (0 Off, 2–5 TR1–TR4; stored = `rst_in` + 1) | 1 (former `Int`), 6, 7 → Off |
 | 62–63 | unused (0) | ignored |
 
 Unpack regenerates everything from the seed (evolving state is not persisted).
@@ -170,7 +167,7 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
 - **Two voices** = two applet instances. Per voice the main list (Dens, Var, Part, Len, Root,
   Oct, Roll, Seed) and the Clock page rows (Src, Div, Roll, Rst; Div shows `-` with Src Int)
   with the module's ranges and defaults; the per-frame clock handling is a port of
-  `Likembe::Controller()` in the same order (Roll input, Rst edge, step), the divider is the
+  `Likembe::Controller()` in the same order (Roll input, Rst input, step); `TRn` = the TR buttons / TR test clock only, never the lab's ClockSetup model, the divider is the
   shared `pulseDividerTick()` in `likembe_engine.js` (1:1 port of `custom::PulseDivider`).
   "re-roll" = Roll input / Seed encoder, immediate; typing a seed regenerates immediately. Mute per voice.
   Lab limitation: events are scheduled 120 ms ahead, so Stop or a setting change acts on the

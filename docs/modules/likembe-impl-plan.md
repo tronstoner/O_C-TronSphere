@@ -128,21 +128,24 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 
 - Main list Dens, Var, Part, Len, Root, Oct, Roll, Seed, `Clock >`; push on `Clock` opens an
   applet-drawn page (own cursor) with Src (Int/TR1-4), Div (1-24, TRn only, `-` with Int),
-  Roll (re-roll input Off/TR1-4, default own 2nd input), Rst (Off/Int/TR1-4), Back.
+  Roll (re-roll input Off/TR1-4, default own 2nd input), Rst (Off/TR1-4, default Off), Back.
+  2026-10-20: TRn = physical jack (rising edge of `frame.gate_high[n-1]`), `Rst Int` removed.
   `AuxButton` while editing a page row also returns. Rules: `docs/CLOCK.md`.
 - Glue-side settings `custom::LikembeClock` + `custom::PulseDivider` in
   `custom/core/likembe_clock.h` (host-testable; core never sees them). Core pack re-laid out
   to bits 0–47 (`kPackBits`), clock page at 48–61; no presets existed.
-- Glue order per tick: Roll input → Rst (Int = rising edge of `clock_m.IsRunning()`, or TRn)
-  → step (Src Int = `Clock(0)`; TRn = `frame.clocked[n-1]` && divider). `Reset()` also drops
-  the step-interval measurement (`have_pulse = false`): found by the `likembe_rst_int` sim
+- Glue order per tick: jack edges (4 bits from `frame.gate_high`) → Roll input → Rst TRn
+  → step (Src Int = `Clock(0)`; TRn = jack edge && divider). `Reset()` also drops
+  the step-interval measurement (`have_pulse = false`): found by the former `likembe_rst_int` sim
   scenario, the first gate after a restart was 50 % of the stop gap and swallowed notes.
-- Finding: upstream auto_reset already calls `Reset()` on every applet on clock start, so
-  `Rst Int` equals upstream behaviour and `Rst Off` cannot prevent that restart.
+- Finding: upstream auto_reset already calls `Reset()` on every applet on clock start; kept,
+  so clock start always restarts and `Rst` only adds a trigger input (`Int` value dropped;
+  stored code 1 of old presets unpacks as Off).
 - Tests: `clock_pack_unpack`, `pulse_divider` (host); sim scenarios `likembe_src_int_x4`,
-  `likembe_src_tr1_div3`, `likembe_rst_int`, `likembe_ext_sync_tr1` (real ClockSetup in
+  `likembe_src_tr1_div3`, `likembe_src_tr1_jack_override`, `likembe_rst_clockstart`,
+  `likembe_rst_tr2`, `likembe_ext_sync_tr1` (real ClockSetup in
   the sim); lab: ClockSetup model, verified in headless Chrome (step counts for x4, steady
-  TR1 / Div 3, manual pulses, Rst Int restart) with a stubbed AudioContext.
+  TR1 / Div 3, manual pulses, Rst restart; at the time with Rst Int, not re-run after the 2026-10-20 TRn change) with a stubbed AudioContext.
 
 ### Firmware translation (lab → glue)
 
@@ -150,8 +153,8 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
   time; the firmware polls every tick. Same order of Roll / Rst / step per instant.
 - The lab's internal clock is a grid model (`t0 + k·beat/m`); upstream `SyncTrig()` has
   integer ticks, shuffle and external-sync nudging. Step order is identical, timing is not.
-- Stop in the lab processes one empty frame at once (so Rst Int sees the falling edge); the
-  firmware sees `IsRunning()` change on the next tick.
+- Lab TRn inputs are event pulses (TR buttons / TR test clock); the firmware detects rising
+  edges of the polled jack level. Same result for pulses longer than one tick.
 
 ## Open questions for the user
 

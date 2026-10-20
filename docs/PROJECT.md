@@ -77,9 +77,13 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   packed layout re-laid out (54 bits). `custom_min` 98,724 B flash / 20,792 B RAM (+64 B / +8 B).
   2026-10-20 (host + sim-verified, not hardware): **Clock page** replaces `Div` and `Clk`. Main list
   Dens, Var, Part, Len, Root, Oct, Roll, Seed, `Clock >`; page rows Src (Int/TR1-4), Div (1-24, TRn only),
-  Roll (re-roll input Off/TR1-4, default own 2nd input), Rst (Off/Int/TR1-4), Back. Settings packed in
+  Roll (re-roll input Off/TR1-4, default own 2nd input), Rst (Off/TR1-4 since the TRn change below), Back. Settings packed in
   bits 48-61 (`custom/core/likembe_clock.h`), core re-laid out to bits 0-47. Rules: `docs/CLOCK.md`.
   `custom_min` 99,476 B flash / 20,824 B RAM (+752 B / +32 B).
+  2026-10-20 (host + sim-verified, not hardware): `TRn` on the Clock page = physical jack (rising
+  edge of `frame.gate_high`), ClockSetup no longer affects Src/Roll/Rst TRn; `Rst` = Off/TR1-4
+  (default Off, `Int` removed; clock start always restarts via upstream auto_reset).
+  `custom_min` 99,492 B flash / 20,824 B RAM (+16 B / 0 B).
 - Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 16 combinations incl. Len 2/7/12/16/24/32).
 
 ### Open decisions
@@ -89,7 +93,7 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
 
 See `docs/ROADMAP.md`. Immediately next: user answers the open questions in
 `docs/modules/likembe-impl-plan.md`; flash `custom_min` and verify Likembe on hardware
-(clock on TR1, two instances Bass + Lead, display readability, tune provisional profiles).
+(clock on TR1, TRn = physical jack with the internal clock running, two instances Bass + Lead, display readability, tune provisional profiles).
 Hello hardware check (Phase 1 remainder) can be done with the same flash.
 
 ## Decisions
@@ -107,5 +111,6 @@ Hello hardware check (Phase 1 remainder) can be done with the same flash.
 | 2026-10-10 | License: GPLv3 (GPL-3.0-or-later) for the whole repo, `LICENSE` at root | Combined work is GPLv3 anyway (4 GPLv3 upstream files); matches NitroTron3; repo may be published on GitHub. Details `docs/UPSTREAM.md` |
 | 2026-10-19 | A setting change is audible immediately; no waiting for the next bar/step unless the module doc states otherwise | Turning a knob must give instant feedback; deferred changes feel broken. Likembe: Len (was Grid)/Part/Seed and TR2 re-roll now immediate |
 | 2026-10-19 | No master clock rework; use upstream clock + trigger map | Existing per-channel mult/div and in-applet division cover the needs; keeps `firmware/` edits at 2 files |
-| 2026-10-20 | Clock page model: applets step once per pulse; `Src Int` = upstream routing (`Clock(0)`), `Src TRn` = `frame.clocked[n-1]` + pulse counter only; Roll/Rst trigger inputs per applet; applet-drawn sub-page with `Back` row | No tempo logic in applets; one place (ClockSetup) owns tempo/multipliers. Details `docs/CLOCK.md` |
+| 2026-10-20 | TRn in applet clock settings = physical jack, not ClockSetup-routed | `Src`/`Roll`/`Rst TRn` read rising edges of `frame.gate_high[n-1]`; `Int` is the only routed source; `Rst Int` dropped (clock start restarts anyway) |
+| 2026-10-20 | Clock page model: applets step once per pulse; `Src Int` = upstream routing (`Clock(0)`), `Src TRn` = `frame.clocked[n-1]` + pulse counter only (TRn superseded by the physical-jack row above); Roll/Rst trigger inputs per applet; applet-drawn sub-page with `Back` row | No tempo logic in applets; one place (ClockSetup) owns tempo/multipliers. Details `docs/CLOCK.md` |
 | 2026-10-20 | Real `ClockSetup`/`HS::clock_m` compiled into the host sim | `Src Int` / `Rst Int` / external sync become host-testable without stubbing clock behaviour |

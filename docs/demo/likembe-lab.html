@@ -87,7 +87,7 @@ const NOTES = ['C','C#','D','Eb','E','F','F#','G','Ab','A','Bb','B'];
 const NOTE_OF = {1: '1/4', 2: '1/8', 3: '1/8T', 4: '1/16', 6: '1/16T', 8: '1/32', 12: '1/32T', 16: '1/64', 24: '1/64T',
   [-1]: '1/2', [-2]: '1/2.', [-3]: '1/1', [-5]: '1/1.', [-7]: '2/1', [-15]: '4/1', [-31]: '8/1'};
 const SRC_NAMES = ['Int', 'TR1', 'TR2', 'TR3', 'TR4'], ROLL_NAMES = ['Off', 'TR1', 'TR2', 'TR3', 'TR4'],
-  RST_NAMES = ['Off', 'Int', 'TR1', 'TR2', 'TR3', 'TR4'];
+  RST_NAMES = ['Off', 'TR1', 'TR2', 'TR3', 'TR4'];
 const SLOT = [0, 2];   // voice -> io_offset: Clock(0) of the left / right hemisphere
 // One place for display formatting.
 const FMT = {
@@ -107,7 +107,7 @@ const voices = [0, 1].map(v => {
   const p = E.defaults(v === 0 ? 0 : 1); p.seed = v === 0 ? 1 : 2;
   core.Init(p);
   return {core, mute: false, snaps: [], view: null, gateEnd: 0, last: null, dumpBars: 32,
-    clk: E.clockDefaults(v === 1), divider: {left: 0}, wasRunning: false, havePulse: false, lastStepT: 0,
+    clk: E.clockDefaults(v === 1), divider: {left: 0}, havePulse: false, lastStepT: 0,
     stepDur: K.kDefaultPulseTicks / K.kTickHz, pendGateEnd: 0};
 });
 
@@ -133,7 +133,7 @@ function buildVoiceUI(v){
       <span>Src</span><select data-c="src">${opt(SRC_NAMES)}</select><output data-oc="src"></output>
       <span>Div</span><input type="number" min="1" max="24" step="1" data-c="div" title="Src TRn: one step every Div pulses (1..24)" style="width:4.5rem"><output data-oc="div"></output>
       <span>Roll</span><select data-c="roll_in" title="Re-roll trigger input">${opt(ROLL_NAMES)}</select><output data-oc="roll_in"></output>
-      <span>Rst</span><select data-c="rst_in" title="Restart at bar start: Int = ClockSetup start">${opt(RST_NAMES)}</select><output data-oc="rst_in"></output>
+      <span>Rst</span><select data-c="rst_in" title="TR jack that restarts at bar start (clock start always restarts)">${opt(RST_NAMES)}</select><output data-oc="rst_in"></output>
     </div>
   </div>
   <pre data-o="text"></pre>
@@ -381,21 +381,18 @@ function resetVoice(V){ V.core.Reset(); V.divider.left = 0; V.havePulse = false;
 // One IOFrame instant. clocked[ch] as IOFrame::Load builds it: internal tock when running and
 // the slot multiplier is not off, else the trigger map (slot ch <- TR ch+1). started = the
 // tick after ClockManager::Start() (APP_HEMISPHERE auto_reset: Reset() on every applet).
-function processFrame(t, clocked, started){
+// jack[ch] = rising edge on physical TR ch+1 (frame.gate_high): the TR buttons / TR test
+// clock only, never the ClockSetup model. Src/Roll/Rst TRn read jack[], Src Int reads clocked[].
+function processFrame(t, clocked, jack, started){
   if (started) voices.forEach(resetVoice);
-  voices.forEach((V, v) => glue(V, v, t, clocked));
+  voices.forEach((V, v) => glue(V, v, t, clocked, jack));
 }
 // Port of Likembe::Controller() clock handling, same order.
-function glue(V, v, t, clocked){
+function glue(V, v, t, clocked, jack){
   const c = V.clk;
-  if (c.roll_in !== K.kRollOff && clocked[c.roll_in - K.kRollTr1]) V.core.Reroll();
-  const running = clockS.running;
-  let rst = false;
-  if (c.rst_in === K.kRstInt) rst = running && !V.wasRunning;
-  else if (c.rst_in >= K.kRstTr1) rst = !!clocked[c.rst_in - K.kRstTr1];
-  V.wasRunning = running;
-  if (rst) resetVoice(V);
-  const step = c.src === K.kSrcInt ? !!clocked[SLOT[v]] : (!!clocked[c.src - K.kSrcTr1] && E.pulseDividerTick(V.divider, c.div));
+  if (c.roll_in !== K.kRollOff && jack[c.roll_in - K.kRollTr1]) V.core.Reroll();
+  if (c.rst_in !== K.kRstOff && jack[c.rst_in - K.kRstTr1]) resetVoice(V);
+  const step = c.src === K.kSrcInt ? !!clocked[SLOT[v]] : (!!jack[c.src - K.kSrcTr1] && E.pulseDividerTick(V.divider, c.div));
   if (!step) return;
   if (V.havePulse) V.stepDur = Math.min(t - V.lastStepT, 10);   // kMaxPulseTicks = 10 s
   V.havePulse = true; V.lastStepT = t;
@@ -430,7 +427,7 @@ function tick(){
     if (started) clockS.startAt = null;
     const clocked = [0, 1, 2, 3].map(ch => (clockS.running && clockS.mult[ch] !== 0) ? tock[ch] : tr[ch]);
     clockS.last = t;
-    processFrame(t, clocked, started);
+    processFrame(t, clocked, tr, started);
   }
   if (clockS.running) tickRef();
 }
@@ -445,10 +442,10 @@ async function togglePlay(){
     const t0 = ac.currentTime + .06;
     clockS.running = true; clockS.t0 = t0; clockS.startAt = t0; clockS.next = [t0, t0, t0, t0];
     refNext = t0; refStep = 0;
-  } else {                 // Stop(); the glue sees running = false at once (Rst Int edge)
+  } else {                 // Stop()
     clockS.running = false; clockS.startAt = null;
     const t = Math.max(ac.currentTime, clockS.last);
-    processFrame(t, [0, 0, 0, 0], false);
+    processFrame(t, [0, 0, 0, 0], [0, 0, 0, 0], false);
     voices.forEach(V => { if (V.cur) V.cur.g.gain.setTargetAtTime(0, ac.currentTime, .02); });
   }
   $('#play').textContent = clockS.running ? 'Stop' : 'Start'; $('#play').classList.toggle('on', clockS.running);

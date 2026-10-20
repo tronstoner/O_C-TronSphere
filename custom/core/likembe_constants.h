@@ -99,19 +99,20 @@ constexpr uint16_t kDefaultSeed = 1;
 
 // ---- Clock page (glue settings, custom/core/likembe_clock.h; docs/CLOCK.md) ----
 // Src: Int = the hemisphere's Clock(0) as upstream routes it (internal clock
-// multiplier when running, else trigger map); TRn = HS::frame.clocked[n-1].
+// multiplier when running, else trigger map); TRn = the physical jack, rising
+// edge of HS::frame.gate_high[n-1] (ClockSetup never affects it).
 enum ClockSrc : uint8_t { kSrcInt = 0, kSrcTr1, kSrcTr2, kSrcTr3, kSrcTr4, kSrcCount };
 // Div: with Src TRn, one engine step every Div input pulses (decrement counter).
 constexpr uint8_t kClockDivMin = 1, kClockDivMax = 24;
 constexpr uint8_t kDefaultClockDiv = 1;
-// Roll: trigger input for an immediate re-roll. Default = the hemisphere's own
+// Roll: trigger input (physical jack) for an immediate re-roll. Default = the hemisphere's own
 // 2nd input (TR2 left, TR4 right).
 enum RollIn : uint8_t { kRollOff = 0, kRollTr1, kRollTr2, kRollTr3, kRollTr4, kRollCount };
 constexpr uint8_t kDefaultRollLeft = kRollTr2, kDefaultRollRight = kRollTr4;
-// Rst: restart at bar start (figures kept). Int = ClockSetup start (rising edge
-// of HS::clock_m.IsRunning()).
-enum RstIn : uint8_t { kRstOff = 0, kRstInt, kRstTr1, kRstTr2, kRstTr3, kRstTr4, kRstCount };
-constexpr uint8_t kDefaultRst = kRstInt;
+// Rst: extra trigger input (physical jack) that restarts at bar start (figures
+// kept). Clock start always restarts anyway (upstream calls Reset() on start).
+enum RstIn : uint8_t { kRstOff = 0, kRstTr1, kRstTr2, kRstTr3, kRstTr4, kRstCount };
+constexpr uint8_t kDefaultRst = kRstOff;
 
 // ---- Out A velocity gate (glue) ----
 constexpr int kGateAccentUnits = 5 * 1536;    // 5 V on accented notes

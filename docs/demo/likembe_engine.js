@@ -29,7 +29,7 @@ const C = {
   // Clock page (glue): ClockSrc, kClockDiv*, RollIn, RstIn
   kSrcInt: 0, kSrcTr1: 1, kSrcCount: 5, kClockDivMin: 1, kClockDivMax: 24, kDefaultClockDiv: 1,
   kRollOff: 0, kRollTr1: 1, kRollCount: 5, kDefaultRollLeft: 2, kDefaultRollRight: 4,
-  kRstOff: 0, kRstInt: 1, kRstTr1: 2, kRstCount: 6, kDefaultRst: 1,
+  kRstOff: 0, kRstTr1: 1, kRstCount: 5, kDefaultRst: 0,
   kDefaultPulseTicks: 2083, kTickHz: 16666,   // gate length % = lab.gatePct (kGateLengthPct)
   kDefaultPassageIdx: 0, kDefaultRoot: 4, kDefaultSeed: 1,
   kPartStreamOffset: 7919, kPassageStreamOffset: 31, kSeedMix: 0x9E3779B1, kSeedNonZero: 0x6D2B79F5,
@@ -370,7 +370,7 @@ function dump(params, bars, lab) {
 }
 
 // ---- custom/core/likembe_clock.h (glue-level Clock page) ----
-// LikembeClock::Defaults(right): Src Int, Div 1, Roll = own 2nd input, Rst Int.
+// LikembeClock::Defaults(right): Src Int, Div 1, Roll = own 2nd input, Rst Off.
 function clockDefaults(right) {
   return {src: C.kSrcInt, div: C.kDefaultClockDiv, roll_in: right ? C.kDefaultRollRight : C.kDefaultRollLeft, rst_in: C.kDefaultRst};
 }

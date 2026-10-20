@@ -83,18 +83,21 @@ Other values have no common note name. The browser lab uses the same labels.
   BPM in an applet. Tempo and note value come from ClockSetup (layer 1.2) or the patch.
 - **`Src Int`** = `Clock(0)` exactly as upstream routes it (internal tock when running with a
   multiplier, else the trigger map with its div/mult and Euclidean filter). One step per pulse.
-- **`Src TRn`** = `HS::frame.clocked[n-1]` plus a **pulse counter only** (`Div`: one step every
-  Div pulses, decrement counter, fires on the first pulse after a reset;
-  `custom::PulseDivider`, `custom/core/likembe_clock.h`). Note: `frame.clocked[n-1]` is slot
-  n-1 after upstream routing, i.e. TRn under the default trigger map while that slot has no
-  internal multiplier.
+- **`TRn` in applet clock settings = the physical jack** (decided 2026-10-20). `Src TRn`,
+  `Roll TRn`, `Rst TRn` read the rising edge of `HS::frame.gate_high[n-1]`, the raw level of
+  jack TRn read every tick with `OC::DigitalInputs::read_immediate`
+  (`firmware/software/src/HemisphereApplet.cpp:87-90`), edge state kept in the applet. ClockSetup
+  (trigger map, internal clock multipliers) never overrides or influences it; `frame.clocked[]`
+  is not used for TRn.
+- **`Src TRn`** adds a **pulse counter only** (`Div`: one step every Div pulses, decrement
+  counter, fires on the first pulse after a reset; `custom::PulseDivider`,
+  `custom/core/likembe_clock.h`).
 - **Roll / Rst inputs per applet**: an applet may offer its own trigger inputs for actions
-  (Likembe: `Roll` re-roll, `Rst` restart at bar start; `Rst Int` = rising edge of
-  `HS::clock_m.IsRunning()`). Several actions on the same input all fire.
+  (Likembe: `Roll` re-roll, `Rst` restart at bar start; values `Off`, `TR1`..`TR4`). Several
+  actions on the same input all fire.
 - Applets may read `HS::clock_m` (e.g. `IsRunning()`), never write it.
-- Upstream already calls `Reset()` on every applet when the clock starts (auto_reset, 1.2), so
-  `Rst Int` behaves the same as upstream on a Hemisphere start; `Rst Off` cannot suppress
-  that upstream reset.
+- **Clock start always restarts the sequence**: upstream calls `Reset()` on every applet when
+  the clock starts (auto_reset, 1.2); kept as is. `Rst` adds a trigger input for restarts.
 - Likembe is the reference implementation: Clock page (`docs/modules/likembe.md`).
 
 ## 3. Host simulator coverage
@@ -108,4 +111,5 @@ default sources. Not covered: the ClockSetup **UI** (its `View()`/encoder handli
 but not reachable: no Up+Down overlay), tap tempo, shuffle and boops (no sim commands), MIDI
 clock, skip filters (default off), trigger-map source/div/Euclid editing (defaults only).
 Scenarios: `task host:sim` (no arguments) runs `likembe_src_int_x4`, `likembe_src_tr1_div3`,
-`likembe_rst_int`, `likembe_ext_sync_tr1`.
+`likembe_src_tr1_jack_override`, `likembe_rst_clockstart`, `likembe_rst_tr2`,
+`likembe_ext_sync_tr1`.
