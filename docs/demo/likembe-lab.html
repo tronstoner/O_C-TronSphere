@@ -123,7 +123,7 @@ function buildVoiceUI(v){
       <span>Dens</span><input type="range" min="0" max="100" step="5" data-k="density_pct"><output data-o="density_pct"></output>
       <span>Var</span><input type="range" min="0" max="100" step="5" data-k="variation_pct"><output data-o="variation_pct"></output>
       <span>Part</span><select class="w2" data-k="part">${opt(K.kPartNames)}</select>
-      <span>Len</span><input class="w2" type="number" min="2" max="32" step="1" data-k="len" title="Pulses per bar (2..32)" style="width:4.5rem">
+      <span>Len</span><input class="w2" type="number" min="1" max="32" step="1" data-k="len" title="Pulses per bar (1..32)" style="width:4.5rem">
       <span>Root</span><select class="w2" data-k="root">${opt(NOTES)}</select>
       <span>Oct</span><select class="w2" data-k="octave">${opt([-2,-1,0,1,2,3], x => [x, FMT.oct(x)])}</select>
       <span>Roll</span><select class="w2" data-k="passage_idx">${opt(K.kPassageBars, (x, i) => [i, FMT.pass(i)])}</select>

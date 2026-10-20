@@ -55,12 +55,14 @@ happens at the bar line, by definition.
 | 1 `Dens` | Density | 0–100 % | per part (`kParts[].density_pct`, Bass 85) | 5 % | immediately; display shows the effective value incl. CV1 |
 | 2 `Var` | Variation rate | 0–100 % (= 0–1 mutations per bar) | per part (Bass 8) | 5 % | immediately |
 | 3 `Part` | Part | Bass, Lead, MiSol, Solo | Bass | 1 | immediately (regenerates from seed with the part's default loops; bar position and passage counter kept, phases restart at 0); Density/Var keep the user's values (no per-part default reload) |
-| 4 `Len` | Steps per bar (bar line, realignment cycle, loop fit, step row) | 2–32 (`kLenMin`..`kLenMax`) | 16 (`kDefaultLen`) | 1 | immediately (regenerates; `pulse_idx` wrapped into the new bar, passage counter kept, phases restart at 0) |
+| 4 `Len` | Steps per bar (bar line, realignment cycle, loop fit, step row) | 1–32 (`kLenMin`..`kLenMax`) | 16 (`kDefaultLen`) | 1 | immediately (regenerates; `pulse_idx` wrapped into the new bar, passage counter kept, phases restart at 0) |
 | 5 `Root` | Root (lowest key) | C..B, wraps | E (`kDefaultRoot`) | 1 semitone | immediately |
 | 6 `Oct` | Octave offset (shifts all pitches by 12·Oct semitones) | −2…+3, shown `Oct +1` / `Oct 0` / `Oct -2` | 0 | 1 octave | immediately |
 | 7 `Roll` | Re-roll every N bars (passage length) | Off, 1–8 bars; shows `Off` or `len:bar` | Off | — | setting immediately; the roll itself happens at the bar line that ends the passage |
 | 8 `Seed` | Seed | 0–65535 (decimal) | 1 | any turn in edit mode = new random seed | immediately (`RerollNow`, same as the Roll input) |
 | 9 `Clock` | Shown `Clock >`; **push opens the Clock page** (no edit mode) | — | — | — | — |
+
+Len 1 (without the lab cap): one pulse per bar, thumb L plays it, phases do not advance at the bar line (strokes = 0); parts with a start offset (Lead/MiSolo/Solo) are silent.
 
 **Clock page** (applet-drawn sub-page, own cursor; settings `custom::LikembeClock`,
 `custom/core/likembe_clock.h`). Turn = move between rows, push = edit (inverted) / leave
@@ -135,7 +137,7 @@ page (`LikembeClock::Pack()`/`Unpack()`, `likembe_clock.h`) at bits 48–61.
 | 0–6 | density_pct | clamp ≤ 100 |
 | 7–8 | part | ≥ 4 → Bass (2 bits, always valid) |
 | 9–12 | root | clamp ≤ 11 |
-| 13–17 | len − 2 (0..30 = Len 2..32) | 31 → clamp to 32 |
+| 13–17 | len − 1 (0..31 = Len 1..32) | none (all values valid; clamped anyway) |
 | 18–24 | variation_pct | clamp ≤ 100 |
 | 25–28 | passage_idx | clamp ≤ 8 |
 | 29–31 | octave + 2 (0..5 = −2..+3) | 6, 7 clamp to +3 |
@@ -188,7 +190,7 @@ module; `task host:parity` proves it (C++ `host/tools/likembe_dump.cpp` vs
   `likembe_constants.h` format (`kStepWeight[kPartCount][5]`, `kThumbLStartMiddle`); a
   global-only value that differs between parts is printed as a per-part table with a note
   that the core needs a change for it.
-- **Loop cap: Off | Len** (lab prototype, not in firmware; default Off): each thumb loop n <= min(Len, `kMaxLoop`) at generation, loop-length mutation and at once when Len drops or the cap is switched on (loop + theme truncated); shows `cap:Len`, exports a core-change note, flags Dump.
+- **Loop cap: Off | Len** (lab prototype, not in firmware; default Off): each thumb loop n <= clamp(Len, 1, `kMaxLoop`) (cap floor 1: at Len 1 both loops are truncated to one element; `kMinLoop` 2 still applies uncapped) at generation, loop-length mutation and at once when Len drops or the cap is switched on (loop + theme truncated); shows `cap:Len`, exports a core-change note, flags Dump.
 - **Dump events:** N bars from Init with the voice's current parameters, in the parity format,
   headed by the equivalent `likembe_dump` arguments (flagged when lab values differ from firmware).
 

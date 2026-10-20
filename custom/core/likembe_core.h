@@ -191,7 +191,7 @@ struct LikembeCore {
   // Persistence (settings only). Bit layout, LSB first (bits 48..63 are left
   // to the glue: Likembe.h packs its clock page there, custom/core/likembe_clock.h):
   //  0..6 density_pct (7)  7..8 part (2)  9..12 root (4)
-  // 13..17 len - kLenMin (5; 31 -> Len 33 clamps to 32)  18..24 variation_pct (7)
+  // 13..17 len - kLenMin (5; Len 1..32 -> 0..31)  18..24 variation_pct (7)
   // 25..28 passage_idx (4)  29..31 octave - kOctaveMin (3; 6, 7 clamp to +3)  32..47 seed (16)
   static constexpr int kPackBits = 48;
   uint64_t Pack() const {

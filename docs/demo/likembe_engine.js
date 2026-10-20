@@ -13,7 +13,7 @@
 const C = {
   kUnitsPerSemitone: 128, kMidiAtZeroUnits: 36, kMaxPitchUnits: 9216,
   kTunings: [[0, 2, 4, 7, 9]],
-  kLenMin: 2, kLenMax: 32, kDefaultLen: 16, kMinLoop: 2, kMaxLoop: 8,
+  kLenMin: 1, kLenMax: 32, kDefaultLen: 16, kMinLoop: 2, kMaxLoop: 8,
   kPolicyFit: 0, kPolicyOneDrift: 1, kPolicyBothDrift: 2,
   kPartNames: ['Bass', 'Lead', 'MiSol', 'Solo'],
   kParts: [
@@ -109,8 +109,9 @@ class Core {
     this.labPending = cloneLab(lab);
     if (lab.loopCap && !this.lab.loopCap) { this.lab.loopCap = true; this.ApplyCap(); }   // cap on: truncate at once
   }
-  Cap() { return this.lab.loopCap ? clampI(this.params.len, C.kMinLoop, C.kMaxLoop) : C.kMaxLoop; }
-  AllMask() { let a = 0; for (let n = C.kMinLoop; n <= this.Cap(); ++n) a |= bit(n); return a >>> 0; }
+  Cap() { return this.lab.loopCap ? clampI(this.params.len, 1, C.kMaxLoop) : C.kMaxLoop; }
+  MinN() { return Math.min(C.kMinLoop, this.Cap()); }   // cap 1 allows n = 1
+  AllMask() { let a = 0; for (let n = this.MinN(); n <= this.Cap(); ++n) a |= bit(n); return a >>> 0; }
   ApplyCap() {   // truncate live loops and theme copies to the cap, phase wrapped
     const cap = this.Cap();
     for (const t of [...this.thumb, ...this.theme]) if (t.n > cap) {
@@ -205,7 +206,7 @@ class Core {
   }
   Keys(th) { const out = []; for (let d = this.key_lo; d <= this.key_hi; ++d) if ((d & 1) === th) out.push(d); return out; }
   IsFit(n) { return this.pulses_per_bar % (2 * n) === 0; }
-  FitMask() { let f = 0; for (let n = C.kMinLoop; n <= this.Cap(); ++n) if (this.IsFit(n)) f |= bit(n); return (f & (f - 1)) ? f >>> 0 : this.AllMask(); }
+  FitMask() { let f = 0; for (let n = this.MinN(); n <= this.Cap(); ++n) if (this.IsFit(n)) f |= bit(n); return (f & (f - 1)) ? f >>> 0 : this.AllMask(); }
   AllowedMask(other) {
     const all = this.AllMask(), fit = this.FitMask();
     switch (this.Profile().policy) {
@@ -273,7 +274,8 @@ class Core {
         l = Core.PickFromMask(r, all);
         rr = Core.PickFromMask(r, (all & ~bit(l)) & 0xFFFF);
     }
-    this.thumb[0].n = l; this.thumb[1].n = rr;
+    const cap = this.Cap();   // cap 1: second pick falls back to kMinLoop, truncate
+    this.thumb[0].n = Math.min(l, cap); this.thumb[1].n = Math.min(rr, cap);
   }
   NewPassage(force) {
     if (force || chance(this.rng_passage, this.L().loopChange * 100)) this.RollLoopLengths();
@@ -327,11 +329,11 @@ class Core {
         const f = (this.AllowedMask(other) & ~bit(t.n) & ~bit(other)) & 0xFFFF;
         if (!f) return;
         let up = 0, dn = 0;
-        for (let m = C.kMinLoop; m <= C.kMaxLoop; ++m) if (f & bit(m)) { if (m > t.n) up |= bit(m); else dn |= bit(m); }
+        for (let m = 1; m <= C.kMaxLoop; ++m) if (f & bit(m)) { if (m > t.n) up |= bit(m); else dn |= bit(m); }
         let np = 0;
         const useUp = up && (!dn || hiBit(r));
-        if (useUp) { for (let m = C.kMinLoop; m <= C.kMaxLoop; ++m) if (up & bit(m)) { np = m; break; } }
-        else { for (let m = C.kMaxLoop; m >= C.kMinLoop; --m) if (dn & bit(m)) { np = m; break; } }
+        if (useUp) { for (let m = 1; m <= C.kMaxLoop; ++m) if (up & bit(m)) { np = m; break; } }
+        else { for (let m = C.kMaxLoop; m >= 1; --m) if (dn & bit(m)) { np = m; break; } }
         while (t.n < np) {
           const i = keys.indexOf(t.e[t.n - 1].degree);
           const ni = clampI(i + (hiBit(r) ? 1 : -1), 0, c - 1);

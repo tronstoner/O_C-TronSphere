@@ -29,7 +29,7 @@ constexpr uint8_t kTuningCount = 1;       // enabled tunings (MVP: pentatonic on
 
 // ---- Time / loops ----
 // Len = pulses per bar (bar line, cycle, loop-fit rule, display step row).
-constexpr uint8_t kLenMin = 2, kLenMax = 32;
+constexpr uint8_t kLenMin = 1, kLenMax = 32;
 constexpr uint8_t kDefaultLen = 16;
 constexpr uint8_t kMinLoop = 2;
 constexpr uint8_t kMaxLoop = 8;           // strokes per thumb figure

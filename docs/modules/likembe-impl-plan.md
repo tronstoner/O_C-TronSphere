@@ -107,7 +107,7 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 
 ## Len / Div replace Grid (2026-10-19, user decision)
 
-- `Grid` (16/12) split into `Len` (pulses per bar 2..32, default 16) and `Div` (clock
+- `Grid` (16/12) split into `Len` (pulses per bar 1..32 since 2026-10-20, was 2..32; default 16) and `Div` (clock
   division 1..8, default 1). Core: `params.len` drives `pulses_per_bar`, bar line, cycle,
   `FitMask` (2n | Len; fewer than two fitting lengths -> all lengths fit), default loops
   `loops16`/`loops12` at Len 16/12, otherwise `RollLoopLengths()` from the passage stream at
@@ -119,7 +119,7 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
   16 pulses, 2 px above; beat ticks every 4 pulses (`kBeatPulses`).
 - Tests: `Make()` takes Len; `loop_policies_and_unequal`, `phase_advance_per_bar` now loop
   Len 12/16/24/32; `params_live_immediate`, `pack_unpack` (new bit positions, Len/Div clamp),
-  `cycle_bars_and_index` use `len`; new `len_sweep` (Len 2..32 x 4 parts). Parity: `--grid` ->
+  `cycle_bars_and_index` use `len`; new `len_sweep` (Len 1..32 x 4 parts). Parity: `--grid` ->
   `--len`, 16 combinations incl. Len 2, 7, 12, 16, 24, 32.
 - Verified: host tests, parity, sim screenshots Len 12/16/24/32, sim Div 2 at 120:4 (engine
   pulse 250 ms, gate 125 ms). Lab Len/Div UI: script syntax-checked only, not run in a browser.

@@ -84,7 +84,7 @@ Custom Ornament & Crime firmware for Teensy 3.2, forked from Phazerville Suite b
   edge of `frame.gate_high`), ClockSetup no longer affects Src/Roll/Rst TRn; `Rst` = Off/TR1-4
   (default Off, `Int` removed; clock start always restarts via upstream auto_reset).
   `custom_min` 99,492 B flash / 20,824 B RAM (+16 B / 0 B).
-- Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 16 combinations incl. Len 2/7/12/16/24/32).
+- Likembe browser lab (`docs/demo/likembe-lab.html`): JS engine matches the C++ core event for event (`task host:parity`, 18 combinations incl. Len 1/2/7/12/16/24/32). `Len` range is 1..32 (Len 1 allowed 2026-10-20; offset parts silent there).
 
 ### Open decisions
 - Open questions in `docs/modules/evolving-voltage-concept.md` §6.

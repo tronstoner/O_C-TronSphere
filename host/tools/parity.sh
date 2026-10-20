@@ -40,6 +40,8 @@ done <<LIST
 --seed 10 --part 3 --len 32 --var 75 --pass 2 --bars 96
 --seed 11 --part 1 --len 7 --var 100 --pass 1 --bars 64
 --seed 12 --part 0 --len 2 --var 100 --pass 1 --bars 64
+--seed 13 --part 0 --len 1 --var 100 --pass 1 --bars 64
+--seed 14 --part 3 --len 1 --var 75 --pass 2 --bars 64
 LIST
 [ $fail -eq 0 ] && echo "PARITY OK" || echo "PARITY FAILED"
 exit $fail

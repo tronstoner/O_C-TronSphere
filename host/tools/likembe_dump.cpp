@@ -3,7 +3,7 @@
 // likembe_dump -- prints the Likembe core's event stream for parity checks against
 // the browser lab engine (docs/demo/likembe_engine.js). Line format:
 //   bar pulse thumb degree rest accent pitch_units
-// Usage: likembe_dump --seed S --part P --dens D --root R --oct O --len 2..32
+// Usage: likembe_dump --seed S --part P --dens D --root R --oct O --len 1..32
 //                     --var V --pass IDX --bars N   (missing options = part defaults)
 #include <cstdio>
 #include <cstdlib>

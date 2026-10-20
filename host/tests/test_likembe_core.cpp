@@ -334,7 +334,7 @@ TEST(pack_unpack) {
   p.variation_pct = 100; p.passage_idx = 8; p.seed = 0xBEEF;
   LikembeCore a; a.Init(p);
   uint64_t d = a.Pack();
-  CHECK(d >> LikembeCore::kPackBits == 0 && ((d >> 13) & 0x1F) == 25 && ((d >> 29) & 0x7) == 0 && ((d >> 32) & 0xFFFF) == 0xBEEF);
+  CHECK(d >> LikembeCore::kPackBits == 0 && ((d >> 13) & 0x1F) == 26 && ((d >> 29) & 0x7) == 0 && ((d >> 32) & 0xFFFF) == 0xBEEF);
   LikembeCore b; b.Unpack(d);
   CHECK(std::memcmp(&a.params, &b.params, sizeof p) == 0);
   CHECK(LikembeCore::SameFigures(a.thumb, b.thumb));
