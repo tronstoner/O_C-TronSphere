@@ -111,7 +111,9 @@ TEST(degree_range_and_ownership) {
   return ok;
 }
 
-TEST(element0_never_rests) {
+// Rhythm layer: the bar head (part offset) always plays and is accented; at
+// density 0 it is the only note of the bar.
+TEST(bar_head_never_rests) {
   bool ok = true;
   for (uint8_t part = 0; part < lk::kPartCount; ++part)
     for (uint16_t seed = 1; seed < 60; ++seed) {
@@ -119,11 +121,44 @@ TEST(element0_never_rests) {
       c.params.density_pct = 0; c.params.variation_pct = 100;
       for (int bar = 0; bar < 20; ++bar) {
         for (int i = 0; i < c.pulses_per_bar; ++i) {
+          uint8_t pos = c.pulse_idx;
           LikembeEvent e = c.Pulse();
-          if (e.accent && !e.note) { CHECK(false); Dump(c, "el0"); }
+          bool head = pos == c.RhythmHead();
+          if (head != e.note || (head && !e.accent)) { CHECK(false); Dump(c, "head"); }
         }
       }
     }
+  return ok;
+}
+
+// Len defines the feel: at fixed density and no variation, the play/rest/bar-
+// accent pattern is identical in every bar for Len 5, 7, 16, while the pitch
+// loops (lengths not dividing the strokes per bar) give different degrees.
+TEST(rhythm_repeats_with_len) {
+  bool ok = true;
+  const uint8_t lens[] = {5, 7, 16};
+  for (uint8_t len : lens)
+    for (uint8_t part = 0; part < lk::kPartCount; ++part)
+      for (uint16_t seed = 1; seed < 20; ++seed) {
+        LikembeCore c = Make(part, seed, len);
+        c.params.variation_pct = 0; c.params.density_pct = 60;
+        if (len == 16) { c.thumb[0].n = 3; c.thumb[1].n = 5; c.theme[0].n = 3; c.theme[1].n = 5; }  // 8 strokes: 3, 5 do not divide
+        uint8_t strokes = (uint8_t)(len / 2);
+        bool any_nondiv = (strokes % c.thumb[0].n) || (strokes % c.thumb[1].n);
+        char ref[33], cur[33]; int8_t deg0[33];
+        bool degrees_differ = false;
+        for (int bar = 0; bar < 12; ++bar) {
+          for (int i = 0; i < len; ++i) {
+            LikembeEvent e = c.Pulse();
+            cur[i] = !e.note ? '.' : (i == c.RhythmHead() ? 'X' : 'x');
+            if (bar == 0) deg0[i] = (int8_t)e.degree;
+            else if (e.degree != deg0[i]) degrees_differ = true;
+          }
+          if (bar == 0) std::memcpy(ref, cur, len);
+          else if (std::memcmp(ref, cur, len) != 0) { CHECK(false); std::printf("  len %d part %d seed %d bar %d\n", len, part, seed, bar); Dump(c, "rhythm"); break; }
+        }
+        if (any_nondiv && !degrees_differ) { CHECK(false); std::printf("  degrees static: len %d part %d seed %d\n", len, part, seed); }
+      }
   return ok;
 }
 
@@ -490,7 +525,8 @@ int main() {
   RUN(determinism);
   RUN(loop_policies_and_unequal);
   RUN(degree_range_and_ownership);
-  RUN(element0_never_rests);
+  RUN(bar_head_never_rests);
+  RUN(rhythm_repeats_with_len);
   RUN(alternation_and_offset);
   RUN(phase_advance_per_bar);
   RUN(density_statistics);

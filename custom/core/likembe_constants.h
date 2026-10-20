@@ -81,6 +81,12 @@ constexpr uint8_t kMutWeight[4] = {30, 20, 6, 5};
 // Octave mutation may go up to hi + this many degrees (JS reference: hi + 2).
 constexpr uint8_t kOctaveHeadroom = 2;
 
+// Rhythm layer rest bias (0..255, added to a position's rest draw before the
+// density compare, saturating at 255 so density 100 never rests): last bar
+// position (lighter bar end) and all other non-head positions.
+constexpr uint8_t kRestBiasLast = 40;
+constexpr uint8_t kRestBiasOther = 0;
+
 constexpr uint8_t kReturnToThemePct = 30;     // ret (x rate)
 constexpr uint8_t kLoopChangePct = 40;        // loop-length change at a new passage
 constexpr uint8_t kEnergyBuildPct = 0;        // not in MVP (unused)

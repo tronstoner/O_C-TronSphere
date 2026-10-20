@@ -48,9 +48,9 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
 - **Re-roll** = new seed (drawn from the passage stream) + new passage with *forced* new loop
   lengths under the policy + regenerated figures (new theme), applied immediately (decided
   2026-10-19; pulse position kept, phases restart at 0). `RerollNow()` is the same call.
-- **Density is live**: each element stores its rest draw (0..255); rest iff
-  `j > 0 && draw*100 >= density*256`. Changing density/CV1 changes rests immediately and
-  consumes no randomness; it is the same decision as the spec's `random > ρ` at generation.
+- **Density is live**: each bar position stores its rest draw (0..255, rhythm layer since
+  2026-10-20; before that per loop element); rest iff `min(255, draw + bias)*100 >= density*256`.
+  Changing density/CV1 changes rests immediately and consumes no randomness.
 - `active_part` holds the part the figures belong to (updated on regeneration, i.e. immediately on a part change).
 - Len/part/seed changes regenerate from the seed immediately (decided 2026-10-19); `pulse_idx` is kept (wrapped to the new Len) and `bar_in_passage` is kept, so the clock grid never jumps; phases restart at 0. Root is immediate.
 - ~~Pulse clock source `Clk`~~ replaced 2026-10-20 by the Clock page (below); `div` and
@@ -146,6 +146,22 @@ copy and push it back via `SetParams`, which would regenerate the old seed).
   `likembe_rst_tr2`, `likembe_ext_sync_tr1` (real ClockSetup in
   the sim); lab: ClockSetup model, verified in headless Chrome (step counts for x4, steady
   TR1 / Div 3, manual pulses, Rst restart; at the time with Rst Int, not re-run after the 2026-10-20 TRn change) with a stubbed AudioContext.
+
+## Rhythm per bar position, pitches per thumb (2026-10-20, user decision; done)
+
+- Intent: `Len` defines the feel (Len 5 = audible 5-pulse rhythm); pitch loops stay polymetric;
+  one user parameter (Len), loop lengths internal.
+- Core: `rhythm[kLenMax]` + `theme_rhythm`, `RhythmHead()` (= part offset), `RestAt(i)`;
+  `LikembeElement` = degree only; `Rests()` removed. Rest mutation toggles a rhythm position
+  after the head. Constants `kRestBiasLast` = 40, `kRestBiasOther` = 0. Pack layout unchanged.
+- Deviation from the brief: "position 0 always plays" is implemented as "the head position
+  (part offset, 0 for Bass) always plays", since Lead/Mi-solo/Solo keep their silent offset
+  pulses; the rest mutation picks from head+1..Len-1.
+- Draw order change (`GenRhythm` after both thumbs) changes every seed's output vs before.
+- Tests: `bar_head_never_rests` (replaces `element0_never_rests`), `rhythm_repeats_with_len`
+  (Len 5/7/16, non-dividing loops: identical rhythm every bar, degrees differ). Parity OK,
+  sim scenarios unchanged OK. Lab: step row/`bar` text line = rhythm, two bias constants in the
+  panel and export; lab script syntax-checked only, not run in a browser.
 
 ### Firmware translation (lab → glue)
 
