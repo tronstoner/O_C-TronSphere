@@ -343,17 +343,20 @@ private:
     for (int i = 0; i < b; i += kBeatPulses) gfxLine(i * w, kTickY, i * w + (i == 0 ? 1 : 0), kTickY);
   }
 
-  // Bar row: n segments across kSqMaxW, one per bar; filled = current bar
+  // Bar row: one segment per bar at fixed pitch; filled = current bar (Roll: elapsed too)
   // (Roll On: also bars already elapsed in the passage), others one pixel.
   // Roll Off: n = realignment cycle; Roll On: n = passage length.
   void DrawSquares() {
     const int len = custom::likembe::kPassageBars[core.params.passage_idx];
     const int n = len ? len : core.cycle_bars;
     const int cur = len ? core.bar_in_passage : core.cycle_bar_idx - 1;
-    const int w = kSqMaxW / n > 1 ? kSqMaxW / n : 1;
-    for (int i = 0; i < n && i * w < kSqMaxW; ++i) {
-      const int x = i * w;
-      if (i == cur || (len && i < cur)) gfxRect(x, kSqY, w > 1 ? w - 1 : 1, 3);
+    // Fixed pitch, left-aligned, never stretched: 4 px (3 px segment) up to 12 bars,
+    // 2 px (1 px segment) above; drawn count capped at the row width.
+    const int pitch = n <= kSqMaxW / 4 ? 4 : 2;
+    const int w = pitch - 1;
+    for (int i = 0; i < n && i * pitch < kSqMaxW; ++i) {
+      const int x = i * pitch;
+      if (i == cur || (len && i < cur)) gfxRect(x, kSqY, w, 3);
       else gfxPixel(x, kSqY + 2);
     }
   }

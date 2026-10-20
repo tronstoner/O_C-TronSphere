@@ -244,8 +244,8 @@ function render(V, now){
   for (let i = 0; i < B; i += 4) line(fb, i * w, 46, i * w + (i === 0 ? 1 : 0), 46);
   // bar row: Roll Off = cycle bars, Roll On = passage bars (elapsed + current filled)
   { const L = s.pass, N = L ? L : s.cycle_bars, cur = L ? s.bar_in_passage : s.cycle_bar_idx - 1, SQ = 48, SQW = 50;
-    const ww = SQW / N > 1 ? (SQW / N | 0) : 1;
-    for (let i = 0; i < N && i * ww < SQW; ++i) { const x = i * ww; if (i === cur || (L && i < cur)) rect(fb, x, SQ, ww > 1 ? ww - 1 : 1, 3); else px(fb, x, SQ + 2); } }
+    const pitch = N <= (SQW / 4 | 0) ? 4 : 2, ww = pitch - 1;
+    for (let i = 0; i < N && i * pitch < SQW; ++i) { const x = i * pitch; if (i === cur || (L && i < cur)) rect(fb, x, SQ, ww, 3); else px(fb, x, SQ + 2); } }
   // thumbs
   [0, 1].forEach(th => {
     const y = 52 + th * 6, T = s.thumbs[th];
